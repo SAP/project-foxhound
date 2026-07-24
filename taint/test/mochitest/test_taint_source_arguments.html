@@ -86,6 +86,16 @@
         SimpleTest.is(op.operation, "manual taint source");
         checkArguments(op, ["hello", "attr1", "attr2"]);
       });
+
+      // very long arg
+      add_task(async function test_default_name_with_extra_args() {
+        let arg = "hello" + " hello".repeat(128);
+        const op = sourceOp(
+          String.tainted("hello", "foo", arg)
+        );
+        SimpleTest.is(op.operation, "foo");
+        checkArguments(op, ["hello", arg]);
+      });
     </script>
   </head>
 

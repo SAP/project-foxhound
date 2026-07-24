@@ -158,7 +158,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   arguments.push_back(taintarg(cx, str));
   for (unsigned i = 2; i < args.length(); i++) {
     RootedValue arg(cx, args[i]);
-    arguments.push_back(taintarg(cx, arg));
+    arguments.push_back(taintarg(cx, arg, true));
   }
 
   TaintOperation op = TaintOperation(source.c_str(), TaintLocationFromContext(cx), std::move(arguments));
