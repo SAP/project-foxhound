@@ -1897,7 +1897,13 @@ nsresult nsStandardURL::SetHostPort(const nsACString& aValue) {
 
   auto onExitGuard = MakeScopeExit([&] { SanityCheck(); });
 
-  nsresult rv = SetHost(Substring(start, iter));
+  // Foxhound: an iterator-based Substring(start, iter) rebinds to a raw char*
+  // and drops taint. Build the host substring from offsets into aValue so the
+  // host's taint is carried into SetHost.
+  const char* base = aValue.BeginReading();
+  uint32_t hostPos = static_cast<uint32_t>(start.get() - base);
+  uint32_t hostLen = static_cast<uint32_t>(iter.get() - start.get());
+  nsresult rv = SetHost(Substring(aValue, hostPos, hostLen));
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (iter == end) {
@@ -2813,7 +2819,9 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     }
 
     // build up new candidate spec
-    spec.Assign(mSpec.get(), mPath.mPos);
+    // Foxhound: assign from a substring of mSpec (not the raw char* buffer) so
+    // the taint of the retained prefix survives.
+    spec.Assign(Substring(mSpec, 0, mPath.mPos));
 
     // ensure leading '/'
     if (filepath[dirPos] != '/') {
@@ -2823,22 +2831,21 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     nsSegmentEncoder encoder;
 
     // append encoded filepath components
+    // Foxhound: feed the encoder substrings of the tainted `str` (rather than
+    // dependent substrings over the raw char* buffer, which carry no taint).
     if (dirLen > 0) {
-      encoder.EncodeSegment(
-          Substring(filepath + dirPos, filepath + dirPos + dirLen),
-          esc_Directory | esc_AlwaysCopy, spec);
+      encoder.EncodeSegment(Substring(str, dirPos, dirLen),
+                            esc_Directory | esc_AlwaysCopy, spec);
     }
     if (baseLen > 0) {
-      encoder.EncodeSegment(
-          Substring(filepath + basePos, filepath + basePos + baseLen),
-          esc_FileBaseName | esc_AlwaysCopy, spec);
+      encoder.EncodeSegment(Substring(str, basePos, baseLen),
+                            esc_FileBaseName | esc_AlwaysCopy, spec);
     }
     if (extLen >= 0) {
       spec.Append('.');
       if (extLen > 0) {
-        encoder.EncodeSegment(
-            Substring(filepath + extPos, filepath + extPos + extLen),
-            esc_FileExtension | esc_AlwaysCopy, spec);
+        encoder.EncodeSegment(Substring(str, extPos, extLen),
+                              esc_FileExtension | esc_AlwaysCopy, spec);
       }
     }
 
@@ -2846,7 +2853,9 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     if (mFilepath.mLen >= 0) {
       uint32_t end = mFilepath.mPos + mFilepath.mLen;
       if (mSpec.Length() > end) {
-        spec.Append(mSpec.get() + end, mSpec.Length() - end);
+        // Foxhound: append from a substring of mSpec so the query/ref tail
+        // keeps its taint.
+        spec.Append(Substring(mSpec, end, mSpec.Length() - end));
       }
     }
 
