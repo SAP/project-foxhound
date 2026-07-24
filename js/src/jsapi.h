@@ -1004,6 +1004,14 @@ JS_GetStringTaint(const JSLinearString* str);
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
 
+// Foxhound: Build a JS object describing the given string taint. This mirrors
+// the structure returned by the `.taint` getter on primitive strings, so that
+// non-string carriers of tainted data (e.g. TrustedHTML) can expose their taint
+// through the same shape.
+extern JS_PUBLIC_API bool
+JS_GetTaintAsObject(JSContext* cx, const StringTaint& taint,
+                    JS::MutableHandleValue out);
+
 extern JS_PUBLIC_API void
 JS_SetTaint(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const StringTaint& taint);
 

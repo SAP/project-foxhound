@@ -6,6 +6,9 @@
 
 #include "mozilla/dom/TrustedHTML.h"
 
+#include "mozilla/ErrorResult.h"
+#include "jsapi.h"
+
 namespace mozilla::dom {
 
 IMPL_TRUSTED_TYPE_CLASS(TrustedHTML)

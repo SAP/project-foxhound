@@ -215,6 +215,11 @@ GetConvertedScriptSourceForPreNavigationCheck(
       aResult.SetKnownLiveString(mData);                                    \
     }                                                                       \
                                                                             \
+    /* Foxhound: expose the taint of the wrapped string, using the same     \
+       shape as the `.taint` getter on primitive strings. */                \
+    void GetTaint(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,     \
+                  ErrorResult& aError) const;                               \
+                                                                            \
     /* This is always unforged data, because it's only instantiated         \
        from the befriended `TrustedType*` classes and other trusted         \
        functions . */                                                       \
@@ -245,6 +250,13 @@ GetConvertedScriptSourceForPreNavigationCheck(
   bool _class::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, \
                           JS::MutableHandle<JSObject*> aObject) {            \
     return _class##_Binding::Wrap(aCx, this, aGivenProto, aObject);          \
+  }                                                                          \
+                                                                            \
+  void _class::GetTaint(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,\
+                        ErrorResult& aError) const {                         \
+    if (!JS_GetTaintAsObject(aCx, mData.Taint(), aResult)) {                 \
+      aError.NoteJSContextException(aCx);                                    \
+    }                                                                        \
   }
 
 #endif  // DOM_SECURITY_TRUSTED_TYPES_TRUSTEDTYPEUTILS_H_

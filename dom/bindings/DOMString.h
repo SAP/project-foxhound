@@ -166,6 +166,16 @@ class MOZ_STACK_CLASS DOMString {
     } else if (!aString.IsEmpty()) {
       if (mozilla::StringBuffer* buf = aString.GetStringBuffer()) {
         SetKnownLiveStringBuffer(buf, aString.Length());
+        // Foxhound: SetKnownLiveStringBuffer copies the taint from the shared
+        // string buffer, but a string's taint frequently lives on the string
+        // object itself rather than the buffer (e.g. anything set via
+        // AssignTaint, which is how taint crosses from JS into an nsString).
+        // The UnownedStringBuffer state exposes `mTaint` (not the buffer's
+        // taint) to JS, so prefer the source string's own taint when present to
+        // avoid silently dropping it on the way back out.
+        if (aString.isTainted()) {
+          mTaint = aString.Taint();
+        }
       } else if (aString.IsLiteral()) {
         SetLiteralInternal(aString.BeginReading(), aString.Length());
         mTaint = aString.Taint();

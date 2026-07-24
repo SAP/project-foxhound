@@ -6,6 +6,9 @@
 
 #include "mozilla/dom/TrustedScriptURL.h"
 
+#include "mozilla/ErrorResult.h"
+#include "jsapi.h"
+
 namespace mozilla::dom {
 
 // https://w3c.github.io/trusted-types/dist/spec/#trused-script-url

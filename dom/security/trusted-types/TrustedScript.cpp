@@ -6,6 +6,9 @@
 
 #include "mozilla/dom/TrustedScript.h"
 
+#include "mozilla/ErrorResult.h"
+#include "jsapi.h"
+
 namespace mozilla::dom {
 
 IMPL_TRUSTED_TYPE_CLASS(TrustedScript)

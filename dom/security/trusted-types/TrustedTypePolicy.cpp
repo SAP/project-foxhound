@@ -9,10 +9,26 @@
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/TrustedTypesBinding.h"
+#include "nsTaintingUtils.h"
 
+#include <type_traits>
 #include <utility>
 
 namespace mozilla::dom {
+
+// Foxhound: name recorded in the taint flow when a value passes through a
+// trusted type.
+template <typename T>
+static const char* TrustedTypeName() {
+  if constexpr (std::is_same_v<T, TrustedHTML>) {
+    return "TrustedHTML";
+  } else if constexpr (std::is_same_v<T, TrustedScript>) {
+    return "TrustedScript";
+  } else {
+    static_assert(std::is_same_v<T, TrustedScriptURL>);
+    return "TrustedScriptURL";
+  }
+}
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TrustedTypePolicy, mParentObject,
                                       mOptions.mCreateHTMLCallback,
@@ -69,6 +85,12 @@ already_AddRefed<T> TrustedTypePolicy::CreateTrustedType(
   if (policyValue.IsVoid()) {
     policyValue = EmptyString();
   }
+
+  // Foxhound: A trusted type only wraps a string, so let taint flow through it.
+  // If the produced value is tainted (e.g. derived from a tainted input), record
+  // that it passed through the trusted type. This is a propagation node, not a
+  // source: untainted values stay untainted.
+  MarkTaintOperation(policyValue, TrustedTypeName<T>());
 
   RefPtr<T> trustedObject = new T(std::move(policyValue));
 
