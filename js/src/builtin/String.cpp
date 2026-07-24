@@ -155,7 +155,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   // Every parameter passed after the source name is additionally stored as a string in the
   // arguments vector, allowing arbitrary custom source attributes to be attached to the operation.
   std::vector<std::u16string> arguments;
-  arguments.push_back(taintarg(cx, str));
+  arguments.push_back(taintarg_full(cx, str));
   for (unsigned i = 2; i < args.length(); i++) {
     RootedValue arg(cx, args[i]);
     arguments.push_back(taintarg(cx, arg, true));
