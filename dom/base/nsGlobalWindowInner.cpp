@@ -4511,6 +4511,10 @@ nsresult nsGlobalWindowInner::FireHashchange(const nsAString& aOldURL,
   init.mNewURL = aNewURL;
   init.mOldURL = aOldURL;
 
+  // Foxhound: Mark oldURL and newURL as taint sources for HashChangeEvent
+  MarkTaintSource(init.mOldURL, "HashChangeEvent.oldURL");
+  MarkTaintSource(init.mNewURL, "HashChangeEvent.newURL");
+
   RefPtr<HashChangeEvent> event =
       HashChangeEvent::Constructor(this, u"hashchange"_ns, init);
 
