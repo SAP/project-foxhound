@@ -57,14 +57,14 @@ who = "Henri Sivonen <hsivonen@hsivonen.fi>"
 criteria = "safe-to-deploy"
 user-id = 4484 # Henri Sivonen (hsivonen)
 start = "2019-06-12"
-end = "2026-08-06"
+end = "2027-07-08"
 
 [[wildcard-audits.chardetng_c]]
 who = "Henri Sivonen <hsivonen@hsivonen.fi>"
 criteria = "safe-to-deploy"
 user-id = 4484 # Henri Sivonen (hsivonen)
 start = "2019-12-05"
-end = "2026-08-06"
+end = "2027-07-08"
 
 [[wildcard-audits.clubcard]]
 who = "John M. Schanck <jschanck@mozilla.com>"
@@ -798,6 +798,11 @@ delta = "1.0.62 -> 1.0.68"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "1.0.68 -> 1.0.69"
+
+[[audits.anyhow]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.95 -> 1.0.103"
 
 [[audits.app_units]]
 who = "Emilio Cobos Álvarez <emilio@crisal.io>"
@@ -1652,6 +1657,11 @@ delta = "0.9.10 -> 0.9.13"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.9.13 -> 0.9.14"
+
+[[audits.crossbeam-epoch]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.14 -> 0.9.15"
 
 [[audits.crossbeam-queue]]
 who = "Matthew Gregan <kinetik@flim.org>"
@@ -4281,6 +4291,11 @@ delta = "0.5.9 -> 0.8.0"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.8.0 -> 0.9.3"
+
+[[audits.memmap2]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.3 -> 0.9.11"
 
 [[audits.memoffset]]
 who = "Gabriele Svelto <gsvelto@mozilla.com>"

@@ -6,4 +6,6 @@ ignore = [
   "RUSTSEC-2023-0018",
   # paste <https://bugzilla.mozilla.org/show_bug.cgi?id=1998421>
   "RUSTSEC-2024-0436",
+  # proc-macro-error2 <https://bugzilla.mozilla.org/show_bug.cgi?id=2053362>
+  "RUSTSEC-2026-0173",
 ]

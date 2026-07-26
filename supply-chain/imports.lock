@@ -1104,6 +1104,11 @@ The changes appear to be reasonable updates from Rust's stdlib imported into
 `allocator-api2`'s copy of this code.
 """
 
+[[audits.bytecode-alliance.audits.anyhow]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.69 -> 1.0.71"
+
 [[audits.bytecode-alliance.audits.arbitrary]]
 who = "Nick Fitzgerald <fitzgen@gmail.com>"
 criteria = "safe-to-deploy"
@@ -1243,6 +1248,18 @@ race condition, improving handling of durations, and additionally swapping out a
 spin lock with a lock from the standard library. Minor bits of `unsafe` code
 are modified but that's expected given the nature of this crate.
 """
+
+[[audits.bytecode-alliance.audits.crossbeam-epoch]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.15 -> 0.9.18"
+notes = "Nontrivial update but mostly around dependencies and how `unsafe` code is managed. Everything looks the same shape as before."
+
+[[audits.bytecode-alliance.audits.crossbeam-epoch]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.18 -> 0.9.20"
+notes = "Minor updates, nothing out of place."
 
 [[audits.bytecode-alliance.audits.crypto-common]]
 who = "Benjamin Bouvier <public@benj.me>"
@@ -3598,6 +3615,12 @@ user-id = 48 # Jan-Erik Rediger (badboy)
 start = "2021-03-03"
 end = "2027-05-26"
 notes = "Maintained by me"
+aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.anyhow]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.71 -> 1.0.95"
 aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.askama]]
