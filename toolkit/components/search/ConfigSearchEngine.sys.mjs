@@ -579,6 +579,21 @@ export class ConfigSearchEngine extends SearchEngine {
   }
 
   /**
+   * Returns whether the engine is new. An overridden engine is never new because the
+   * user had already installed the third-party engine now overriding the
+   * app-provided engine, so it is not new to them.
+   *
+   * @returns {boolean}
+   */
+  isNew() {
+    if (this.overriddenById) {
+      return false;
+    }
+
+    return super.isNew();
+  }
+
+  /**
    * Gets the order hint for this engine. This is determined from the search
    * configuration when the engine is initialized.
    *

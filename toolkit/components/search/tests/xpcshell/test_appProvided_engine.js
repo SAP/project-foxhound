@@ -414,6 +414,24 @@ add_task(async function test_isNew_variant() {
   );
 });
 
+add_task(async function test_isNew_overridden() {
+  let engine = SearchService.getEngineById("override");
+  Assert.ok(engine.isNew(), "isNew should return true before being overridden");
+
+  // An engine overridden by a third-party add-on is no longer considered new.
+  engine.setAttr("overriddenBy", "thirdparty@example.com");
+  Assert.ok(
+    !engine.isNew(),
+    "isNew should return false when overridden by a third-party add-on"
+  );
+
+  engine.setAttr("overriddenBy", undefined);
+  Assert.ok(
+    engine.isNew(),
+    "isNew should return true after clearing the override"
+  );
+});
+
 function checkUrlOfType(engine) {
   for (let [key, type] of Object.entries(SearchUtils.URL_TYPE)) {
     Assert.equal(
