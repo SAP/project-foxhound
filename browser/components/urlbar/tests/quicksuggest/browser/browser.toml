@@ -15,8 +15,6 @@ prefs = [
   "layout.css.attr.enabled=true",
 ]
 
-["browser_pickedSearchSuggestion.js"]
-
 ["browser_quicksuggest.js"]
 
 ["browser_quicksuggest_addons.js"]
