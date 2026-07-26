@@ -12,7 +12,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "JSON5",
-  "resource://devtools/shared/storage/vendor/json5.js"
+  "resource://devtools/shared/storage/vendor/json5.mjs"
 );
 
 const MATH_REGEX =

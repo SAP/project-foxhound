@@ -4,33 +4,24 @@
 
 # Upgrading json5
 
-## Getting the Source
+JSON5 source is at https://github.com/json5/json5 but without builds.
+Published builds are available at https://www.npmjs.com/package/json5
+
+The latest tarball can be found at https://registry.npmjs.org/json5/latest
+
+Note: the tarball includes index.js (a classic UMD JS file including polyfills)
+and index.mjs. Use the latter instead to avoid unnecessary bloat.
+
+## Instructions
 
 ```bash
-git clone https://github.com/json5/json5
-cd json5
-git checkout v2.2.1 # checkout the right version tag
+$ cd devtools/shared/storage/vendor/
+$ wget https://registry.npmjs.org/json5/-/json5-2.2.3.tgz
+$ tar xzvf json5-2.2.3.tgz --strip-components 2 package/dist/index.mjs
+$ mv index.mjs json5.mjs
+$ rm json5-2.2.3.tgz
 ```
-
-## Building
-
-```bash
-npm install
-npm run build
-cp dist/index.js <gecko-dev>/devtools/shared/storage/vendor/json5.js
-```
-
-## Patching json5
-
-- open `json5.js`
-- Add the version number to the top of the file:
-  ```
-  /**
-   * json5 v2.2.1
-   */
-  ```
-- Replace instances of `Function('return this')()` with `globalThis`. See Bug 1473549.
 
 ## Update the version:
 
-The current version is 2.2.1. Update this version number everywhere in this file.
+The current version is 2.2.3. Update this version number everywhere in this file.

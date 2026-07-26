@@ -123,6 +123,17 @@ const testCases = [
     true,
   ],
   ["ls4", [{ name: "ls4", value: "0x1" }], false],
+  // Test case from bug 1173701, test coverage for bug 1260382:
+  [
+    "ls5",
+    [
+      { name: "ls5", value: "Object" },
+      { name: "ls5.a", value: 1 },
+      { name: "ls5.b", value: 2 },
+      { name: "ls5.c", value: 3 },
+    ],
+    true,
+  ],
   [["sessionStorage", MAIN_ORIGIN_SECURED]],
   ["ss1", [{ name: "ss1", value: "This#is#an#array" }]],
   [

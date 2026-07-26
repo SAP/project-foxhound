@@ -7,5 +7,5 @@ DIRS += [
 ]
 
 DevToolsModules(
-    'json5.js',
+    'json5.mjs',
 )
