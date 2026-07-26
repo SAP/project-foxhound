@@ -1261,12 +1261,13 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
 
   // Blob URLs don't derive the principal directly from the URL in the same way
   // as normal content principals, and may have a non-content principal.
-  if (aURI->SchemeIs(BLOBURI_SCHEME)) {
+  nsCOMPtr<nsIURI> innermost = NS_GetInnermostURI(aURI);
+  if (innermost && innermost->SchemeIs(BLOBURI_SCHEME)) {
     MOZ_ASSERT(!aInitialDomain,
                "an initial domain for a blob URI makes no sense");
     nsCOMPtr<nsIPrincipal> blobPrincipal;
     if (!dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-            aURI, aAttrs, getter_AddRefs(blobPrincipal))) {
+            innermost, aAttrs, getter_AddRefs(blobPrincipal))) {
       // This isn't a valid Blob URL, give up and return a null principal.
       return NullPrincipal::Create(aAttrs);
     }
