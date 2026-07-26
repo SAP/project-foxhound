@@ -175,8 +175,20 @@ internal fun iPProtectionReducer(
     }
 
     is IPProtectionAction.ToggleFailed -> {
+        // There could be a race condition where a signed-in user is able to start the vpn auth flow
+        // while their account manager is still in "warming up" state (e.g. it's still updating fxa
+        // token after those expire). In that case, the user might finish auth flow in "entitled"
+        // account state, but ip service was never informed about an eligible account.
+        val accountState = if (state.accountState.status == AccountStatus.EnrolledAndEntitled &&
+            state.serviceStatus == ServiceState.Unauthenticated
+        ) {
+            state.accountState.copy(status = AccountStatus.TryAgain)
+        } else {
+            state.accountState
+        }
+
         // Reset `activate` so the next Toggle reads as a fresh edge in observeToggle().
-        state.copy(activate = null)
+        state.copy(activate = null, accountState = accountState)
     }
 
     is IPProtectionAction.CheckAccount -> {

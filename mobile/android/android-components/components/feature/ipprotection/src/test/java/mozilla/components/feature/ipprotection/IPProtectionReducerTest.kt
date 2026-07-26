@@ -123,10 +123,36 @@ class IPProtectionReducerTest {
     }
 
     @Test
-    fun `WHEN ActivationFailed is dispatched THEN activate is cleared`() {
-        val state = defaultState.copy(activate = true)
+    fun `WHEN ToggleFailed is dispatched THEN activate is cleared`() {
+        val state = buildIPProtectionState().copy(activate = true)
         assertEquals(
             state.copy(activate = null),
+            iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
+        )
+    }
+
+    @Test
+    fun `GIVEN user has already finished auth flow successfully but service is still unauthenticated WHEN ToggleFailed is dispatched THEN activate is cleared and account is set for another check`() {
+        val state = buildIPProtectionState().copy(
+            activate = true,
+            accountState = AccountState(status = AccountStatus.EnrolledAndEntitled),
+            serviceStatus = ServiceState.Unauthenticated,
+        )
+        assertEquals(
+            state.copy(activate = null, accountState = state.accountState.copy(status = AccountStatus.TryAgain)),
+            iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
+        )
+    }
+
+    @Test
+    fun `GIVEN user is entitled and service is ready WHEN ToggleFailed is dispatched THEN activate is cleared and account does not do extra checks`() {
+        val state = buildIPProtectionState().copy(
+            activate = true,
+            accountState = AccountState(status = AccountStatus.EnrolledAndEntitled),
+            serviceStatus = ServiceState.Ready,
+        )
+        assertEquals(
+            state.copy(activate = null, accountState = state.accountState),
             iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
         )
     }
