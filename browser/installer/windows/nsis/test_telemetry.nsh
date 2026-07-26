@@ -8,6 +8,7 @@ Function TelemetryTests
   ${UnitTest} TestManualDownloadTelemetryField
   ${UnitTest} TestLaunchStatusTelemetryFields
   ${UnitTest} TestExistingInstallationTelemetryFields
+  ${UnitTest} TestWindowsUBR
 FunctionEnd
 
 Function FakePingInfo
@@ -174,4 +175,19 @@ Function TestExistingInstallationTelemetryFields
 
   Pop $ExistingBuildID
   Pop $ExistingVersion
+FunctionEnd
+
+Function TestWindowsUBR
+  Push $0
+
+  !insertmacro MakeTelemetryPing FakePingInfo
+  ClearErrors
+  ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "UBR"
+  ${If} ${Errors}
+    ${AssertTelemetryData} "windows_ubr" "value" "-1"
+  ${Else}
+    ${AssertTelemetryData} "windows_ubr" "value" "$0"
+  ${EndIf}
+
+  Pop $0
 FunctionEnd
