@@ -15,6 +15,7 @@
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/glean/LayoutMetrics.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -532,10 +533,10 @@ static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
   nsPrintfCString errorMessage("%s loading built-in stylesheet '%s'", aMsg,
                                aURI ? aURI->GetSpecOrDefault().get() : "");
   if (aFailureAction == FailureAction::CrashNightly) {
+    glean::layout::global_stylesheet_not_found.Add();
+    CrashReporter::AppendAppNotesToCrashReport("\n"_ns + errorMessage);
 #ifdef NIGHTLY_BUILD
     MOZ_CRASH_UNSAFE(errorMessage.get());
-#else
-    CrashReporter::AppendAppNotesToCrashReport("\n"_ns + errorMessage);
 #endif
   }
   if (nsCOMPtr<nsIConsoleService> cs =

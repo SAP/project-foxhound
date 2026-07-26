@@ -212,3 +212,19 @@ layout:
     notification_emails:
       - bschouten@mozilla.com
     expires: never
+  global_stylesheet_not_found:
+    type: counter
+    description: >
+      Increments each time one of the GlobalStyleSheetCache stylesheets are
+      not found in the omnijar. See bug 1681745 and bug 2056926.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2057731
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2057731
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - emilio@mozilla.com
+      - dholbert@mozilla.com
+      - gijs@mozilla.com
+    expires: never
