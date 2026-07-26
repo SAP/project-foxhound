@@ -706,6 +706,12 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
   }
 
   if (IsRemoteFrame()) {
+    if (!XRE_IsParentProcess() && mURIToLoad &&
+        mURIToLoad->SchemeIs("javascript")) {
+      // Web content should only be able to load javascript URIs same origin.
+      return NS_ERROR_DOM_BAD_CROSS_ORIGIN_URI;
+    }
+
     if (!EnsureRemoteBrowser()) {
       NS_WARNING("Couldn't create child process for iframe.");
       return NS_ERROR_FAILURE;
