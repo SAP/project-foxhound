@@ -18,6 +18,7 @@ import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 /**
  * @import { UrlbarSearchOneOffs } from "moz-src:///browser/components/urlbar/UrlbarSearchOneOffs.sys.mjs"
  * @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+ * @import { SuggestBackendMerino } from "moz-src:///browser/components/urlbar/private/SuggestBackendMerino.sys.mjs"
  */
 
 /**
@@ -47,6 +48,8 @@ const lazy = XPCOMUtils.declareLazy({
   AIWindow:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
@@ -61,6 +64,7 @@ const lazy = XPCOMUtils.declareLazy({
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SharingUtils: "resource:///modules/SharingUtils.sys.mjs",
@@ -75,6 +79,8 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
@@ -1847,6 +1853,41 @@ ${
           );
         } else {
           this._recordSearch(engine, event, actionDetails);
+        }
+
+        if (
+          this.#isAddressbar &&
+          !actionDetails.isFormHistory &&
+          !result.payload.inPrivateWindow &&
+          !this.isPrivate &&
+          engine instanceof lazy.AppProvidedConfigEngine &&
+          engine.id == lazy.SearchService.defaultEngine.id
+        ) {
+          let merinoBackend = /** @type {?SuggestBackendMerino} */ (
+            lazy.QuickSuggest.getFeature("SuggestBackendMerino")
+          );
+          if (merinoBackend?.isEnabled) {
+            let selection = (
+              result.payload.suggestion || result.payload.query
+            )?.trim();
+            // Don't record an empty selection, or one that looks like an origin
+            // (e.g. "facebook.com"), which `allowRemoteResults` would otherwise
+            // allow.
+            if (
+              selection &&
+              lazy.UrlUtils.looksLikeOrigin(selection) ==
+                lazy.UrlUtils.LOOKS_LIKE_ORIGIN.NONE
+            ) {
+              // Build a context around the selection so all of
+              // `allowRemoteResults`'s checks apply to it rather than to the
+              // originally typed string.
+              let context = this.#makeQueryContext({ searchString: selection });
+              context.tokens = lazy.UrlbarTokenizer.tokenize(context);
+              merinoBackend
+                .query(selection, { queryContext: context })
+                .catch(console.error);
+            }
+          }
         }
 
         if (!result.payload.inPrivateWindow) {

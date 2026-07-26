@@ -39,7 +39,7 @@ export class SuggestBackendMerino extends SuggestBackend {
   }
 
   async query(searchString, { queryContext }) {
-    if (!queryContext.allowRemoteResults()) {
+    if (!searchString || !queryContext.allowRemoteResults()) {
       return [];
     }
 

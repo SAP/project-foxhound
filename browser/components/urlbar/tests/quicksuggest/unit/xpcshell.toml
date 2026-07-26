@@ -16,6 +16,8 @@ requesttimeoutfactor = 2  # Slow on Windows
 
 ["test_merinoClient_weather.js"]
 
+["test_pickedSearchSuggestion.js"]
+
 ["test_quicksuggest.js"]
 
 ["test_quicksuggest_addons.js"]
