@@ -621,7 +621,17 @@ bool IMEContentObserver::IsObservingElement(const nsPresContext& aPresContext,
     return !aElement->IsInDesignMode() &&
            aElement == mRootEditableNodeOrTextControlElement;
   }
-  if (!mRootEditableNodeOrTextControlElement) {
+  if (!mRootEditableNodeOrTextControlElement || !mRootElement) [[unlikely]] {
+    return false;
+  }
+  // If mRootElement is not an inclusive descendant of the root editable node,
+  // it means that mRootElement was a nested editing host in the focused editing
+  // host, but now it's moved outside the editing host. In this case, we should
+  // not reuse this instance because we need to observe the focused editing
+  // host, but we have observed the nested editing host which is now not
+  // focused.
+  if (!mRootElement->IsInclusiveDescendantOf(
+          mRootEditableNodeOrTextControlElement)) [[unlikely]] {
     return false;
   }
   // If design mode state has been changed, IMEContentObserver shouldn't be
