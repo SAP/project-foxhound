@@ -31,6 +31,8 @@
   <string name="history_search_hint">Iskanje po zgodovini</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">Iskanje po zaznamkih</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">Pojdi nazaj in zapri iskanje</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">Išči po zavihkih</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -1543,6 +1545,8 @@
   <string name="add_tab">Dodaj zavihek</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Dodaj zasebni zavihek</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Ustvari skupino zavihkov</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Iskanje po zavihkih</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -2204,6 +2208,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">Nova mapa</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">%1$s premaknjen v mapo %2$s</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">Ni zadetkov.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">Poskusite z drugačnim iskanjem!</string>
   <!--
     Site Permissions
 
@@ -4605,6 +4613,10 @@
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Več o tem</string>
   <!-- Lens image search button content description -->
   <string name="lens_search_content_description">Išči s sliko</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Fotografiraj in pošlji Google Lens</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Išči z Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Dovoljenje zavrnjeno</string>
   <!--

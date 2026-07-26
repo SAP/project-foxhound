@@ -64,7 +64,7 @@
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">Είστε σίγουροι;</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
-  <string name="mozac_feature_prompt_before_unload_dialog_body">Θέλετε να αποχωρήσετε από τον ιστότοπο; Τα καταχωρημένα δεδομένα ενδέχεται να μην αποθηκευτούν</string>
+  <string name="mozac_feature_prompt_before_unload_dialog_body">Θέλετε να αποχωρήσετε από τον ιστότοπο; Τα καταχωρισμένα δεδομένα ενδέχεται να μην αποθηκευτούν</string>
   <!-- Stay button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to stay in the website. -->
   <string name="mozac_feature_prompts_before_unload_stay">Παραμονή</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->

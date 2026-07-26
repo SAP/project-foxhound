@@ -33,6 +33,8 @@
   <string name="mozac_summarize_download_error_positive_button">വീണ്ടും ശ്രമിക്കുക</string>
   <!-- Button for the download error screen to cancel -->
   <string name="mozac_summarize_download_error_negative_button">റദ്ദാക്കുക</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">ഇപ്പോൾ ചുരുക്കിപ്പറയാനാവത്തില്ല</string>
   <!-- Generic fallback message for the info error screen -->
   <string name="mozac_summarize_info_error_message">പിന്നീടു വീണ്ടും ശ്രമിക്കുക.</string>
   <!-- Error code shown on long press of the error icon. %1$d is an error code. -->

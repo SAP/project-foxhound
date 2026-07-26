@@ -90,9 +90,9 @@
   <!-- In the example, the two URLs in markup do not need to be translated. -->
   <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>ᱮᱢ ᱟᱠᱟᱱ ᱴᱷᱤᱠᱬᱟᱹ ᱨᱮ ᱵᱨᱟᱣᱡᱚᱨ ᱦᱚᱥᱴ ᱥᱟᱹᱨᱣᱟᱹᱨ ᱵᱟᱭ ᱧᱟᱢ ᱫᱟᱲᱮᱭᱟᱜ ᱠᱟᱱᱟᱭ ᱾</p>\n<ul>\n<li>ᱵᱷᱩᱞ ᱴᱭᱯᱤᱝ ᱞᱟᱹᱜᱤᱫ ᱴᱷᱤᱠᱬᱟᱹ ᱠᱚ ᱧᱮᱞ ᱵᱤᱰᱟᱹᱣ ᱢᱮ ᱡᱮᱢᱚᱱ <strong>ww</strong>.example.com ᱵᱚᱫᱚᱞ ᱛᱮ <strong>www</strong>.example.com.</li>\n<li>ᱟᱢ ᱡᱩᱫᱤ ᱥᱟᱦᱴᱟ ᱵᱟᱝ ᱞᱚᱰ ᱫᱟᱲᱮᱭᱟᱜ ᱠᱟᱱᱟᱢ, ᱢᱮᱱᱠᱷᱟᱱ ᱟᱢᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱨᱮᱭᱟᱜ ᱰᱟᱴᱟ ᱟᱨ ᱵᱟᱝ Wi-Fi ᱡᱩᱲᱟᱹᱣ ᱧᱮᱞ ᱵᱤᱲᱟᱹᱣ ᱢᱮ ᱾</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
-  <string name="mozac_browser_errorpages_no_internet_title_2">ᱧᱮᱞᱚᱜ ᱠᱟᱱᱟ ᱟᱢᱟᱜ ᱤᱱᱴᱟᱨᱱᱮᱴ ᱠᱚᱱᱮᱠᱥᱚᱱ ᱨᱮ ᱮᱴᱠᱮᱴᱚᱬᱮ ᱢᱮᱱᱟᱜᱼᱟ</string>
+  <string name="mozac_browser_errorpages_no_internet_title_2">ᱡᱟᱦᱟᱸ ᱵᱩᱡᱷᱟᱹᱣᱜ ᱠᱟᱱᱟ ᱟᱢᱟᱜ ᱤᱱᱴᱚᱨᱱᱮᱴ ᱡᱚᱯᱲᱟᱣ ᱨᱮ ᱟᱱᱟᱴ ᱢᱮᱱᱟᱜᱼᱟ</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
-  <string name="mozac_browser_errorpages_no_internet_message_2">ᱮᱴᱟᱜ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱨᱮ ᱡᱚᱯᱲᱟᱣ ᱨᱮᱭᱟᱜ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ᱾ ᱟᱢᱟᱜ ᱢᱚᱰᱮᱢ ᱵᱟᱝᱠᱷᱟᱱ ᱨᱟᱣᱴᱟᱨ ᱧᱮᱞ ᱵᱤᱰᱟᱹᱣ ᱢᱮ ᱾ Wi-Fi ᱥᱟᱶ ᱰᱤᱥᱠᱚᱱᱮᱠᱴ ᱟᱨ ᱫᱚᱦᱲᱟ ᱡᱚᱯᱲᱟᱣ ᱢᱮ ᱾</string>
+  <string name="mozac_browser_errorpages_no_internet_message_2">ᱮᱴᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱨᱮ ᱡᱚᱯᱲᱟᱣ ᱨᱮᱭᱟᱜ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ ᱾ ᱟᱢᱟᱜ ᱢᱚᱰᱮᱢ ᱵᱟᱝᱠᱷᱟᱱ ᱨᱟᱣᱴᱚᱨ ᱧᱮᱞ ᱵᱤᱰᱟᱹᱣ ᱢᱮ ᱾ Wi-Fi ᱥᱟᱶ ᱡᱚᱯᱲᱟᱣ ᱜᱮᱫ ᱠᱟᱛᱮ ᱟᱨ ᱫᱚᱦᱲᱟ ᱡᱚᱯᱲᱟᱣ ᱢᱮ ᱾</string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_error_code">ᱦᱩᱰᱟᱹᱜ ᱠᱚᱰ : NS_ERROR_OFFLINE</string>
   <!-- Text that will show up on the button at the bottom of the error page -->

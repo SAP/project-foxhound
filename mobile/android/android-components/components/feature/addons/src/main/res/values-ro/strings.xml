@@ -230,7 +230,7 @@
   <!-- Long description for the websiteActivity data collection permission -->
   <string name="mozac_feature_addons_permissions_data_collection_websiteActivity_long_description">Să partajeze activitatea pe site-uri web cu dezvoltatorul extensiei</string>
   <!-- Long description for the websiteContent data collection permission -->
-  <string name="mozac_feature_addons_permissions_data_collection_websiteContent_long_description">Distribuie conținutul site-ului web către dezvoltatorul extensiei</string>
+  <string name="mozac_feature_addons_permissions_data_collection_websiteContent_long_description">Să partajeze conținuturi de pe site-uri web cu dezvoltatorul extensiei</string>
   <!-- The version on of add-on. -->
   <string name="mozac_feature_addons_version">Versiune</string>
   <!-- The author of an add-on. -->
@@ -300,7 +300,7 @@
   <!-- Text link to learn more about permission requests on the add-on permissions dialog . -->
   <string name="mozac_feature_addons_permissions_dialog_learn_more">Află mai multe</string>
   <!-- This is the text for the "technical and interaction" checkbox shown in the add-on permissions dialog. -->
-  <string name="mozac_feature_addons_permissions_dialog_technical_and_interaction_data">Distribuie date tehnice și de interacțiune către dezvoltatorul extensiei</string>
+  <string name="mozac_feature_addons_permissions_dialog_technical_and_interaction_data">Să partajeze date tehnice și de interacțiune cu dezvoltatorul extensiei</string>
   <!-- This is a button to cancel the add-on installation . -->
   <string name="mozac_feature_addons_permissions_dialog_cancel">Anulează</string>
   <!-- Accessibility content description to install add-on button. %1$s is the add-on name. -->

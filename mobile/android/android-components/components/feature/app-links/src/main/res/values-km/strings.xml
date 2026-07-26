@@ -8,7 +8,7 @@
 
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
-  <string name="mozac_feature_applinks_open_in">បើក​ក្នុង...</string>
+  <string name="mozac_feature_applinks_open_in">បើក​ក្នុង…</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">បើកនៅក្នុងកម្មវិធីផ្សេងទៀត</string>
   <!--

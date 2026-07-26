@@ -1623,6 +1623,10 @@
   <string name="tab_group_onboarding_list_item_description">ᱢᱤᱫ ᱜᱟᱫᱮᱞ ᱵᱮᱱᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱭᱢᱟ ᱴᱮᱵᱽ ᱵᱟᱪᱷᱟᱣ ᱢᱮ᱾</string>
   <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
   <string name="tab_group_onboarding_item_dismiss_content_description">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱚᱱᱵᱚᱨᱰᱤᱝ ᱠᱷᱟᱨᱚᱪ ᱢᱮ</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">ᱠᱚᱢ ᱠᱷᱚᱥᱨᱚᱫ ᱠᱟᱛᱮ, ᱵᱟᱹᱲᱛᱤ ᱠᱟᱹᱢᱤ ᱞᱟᱹᱜᱤᱫ ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱠᱚ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ</string>
+  <!-- The description displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_description">ᱢᱤᱫ ᱜᱟᱫᱮᱞ ᱵᱮᱱᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱴᱮᱵᱽ ᱵᱟᱪᱷᱟᱣ ᱢᱮ ᱾ ᱩᱱᱠᱩ ᱱᱚᱸᱰᱮ ᱠᱚ ᱥᱟᱧᱪᱟᱣ ᱟᱠᱟᱱᱟ, ᱟᱢ ᱛᱟᱦᱮᱱ ᱡᱷᱚᱜ ᱥᱟᱯᱲᱟᱣᱜ ᱜᱮᱭᱟ ᱠᱚ ᱾</string>
   <!--
     Tab Group
 
@@ -1667,6 +1671,27 @@
     <item quantity="two">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, %2$d ᱴᱮᱵᱽ ᱠᱤᱱ, ᱨᱚᱝ %3$s</item>
     <item quantity="other">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, %2$d ᱴᱮᱵᱽ ᱠᱚ, ᱨᱚᱝ %3$s</item>
   </plurals>
+  <plurals name="share_tab_group_button_content_description">
+    <!--
+      Content Description for share tab group button.
+      %1$s is the name of the tab group.
+      %2$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ ᱦᱟᱹᱴᱤᱧ ᱢᱮ ᱾</item>
+    <item quantity="two">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱠᱤᱱ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ ᱦᱟᱹᱴᱤᱧ ᱢᱮ ᱾</item>
+    <item quantity="other">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱠᱚ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ ᱦᱟᱹᱴᱤᱧ ᱢᱮ ᱾</item>
+  </plurals>
+  <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
+  <string name="tab_group_sheet_dismiss_description">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱧᱮᱞ ᱢᱮ, ᱰᱨᱮᱜᱽ ᱦᱮᱱᱰᱮᱞ ᱨᱟᱹᱯᱩᱫ ᱢᱮ</string>
+  <plurals name="expanded_tab_group_header_description">
+    <!--
+      Accessibility description for the header of an expanded tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ, ᱨᱚᱝ %3$s</item>
+    <item quantity="two">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ ᱠᱤᱱ, ᱨᱚᱝ %3$s</item>
+    <item quantity="other">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱥᱟᱶ %2$d ᱴᱮᱵᱽ ᱠᱚ, ᱨᱚᱝ %3$s</item>
+  </plurals>
   <!-- Title for the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_title">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱢᱮᱴᱟᱣ ᱟᱢ ?</string>
   <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
@@ -1675,6 +1700,36 @@
   <string name="delete_tab_group_confirmation_dialog_confirm">ᱜᱟᱫᱮᱞ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- Title for the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_title">ᱴᱮᱵᱽ ᱵᱚᱸᱫᱚ ᱢᱮ ᱟᱨ ᱜᱟᱫᱮᱞ ᱜᱮᱫᱽ ᱜᱤᱰᱤ ᱢᱮ?</string>
+  <!-- Text shown in the body of the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_body">ᱱᱚᱣᱟ ᱫᱚ ᱜᱟᱫᱮᱞ ᱥᱟᱹᱢᱩᱫᱽ ᱞᱟᱹᱜᱤᱫ ᱢᱮᱴᱟᱣ ᱠᱮᱜᱼᱟᱭ ᱾</string>
+  <!-- Text shown on the confirm button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_confirm">ᱜᱟᱫᱮᱞ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
+  <!-- Text shown on the cancel button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!--
+    Color labels for tab groups, used for accessibility and selection UI.
+
+    Tab group color: Yellow
+  -->
+  <string name="tab_group_color_yellow">ᱥᱟᱥᱟᱝ</string>
+  <!-- Tab group color: Orange -->
+  <string name="tab_group_color_orange">ᱥᱟᱱᱛᱨᱟ</string>
+  <!-- Tab group color: Red -->
+  <string name="tab_group_color_red">ᱟᱨᱟᱜ</string>
+  <!-- Tab group color: Pink -->
+  <string name="tab_group_color_pink">ᱜᱩᱞᱟᱹᱯ</string>
+  <!-- Tab group color: Purple -->
+  <string name="tab_group_color_purple">ᱱᱟᱥᱮ ᱵᱮᱝᱜᱩᱱ</string>
+  <!-- Tab group color: Blue -->
+  <string name="tab_group_color_blue">ᱞᱤᱞ</string>
+  <!-- Tab group color: Cyan -->
+  <string name="tab_group_color_cyan">ᱥᱟᱭᱟᱱ</string>
+  <!-- Tab group color: Green -->
+  <string name="tab_group_color_green">ᱦᱟᱹᱨᱤᱭᱟᱹᱲ</string>
+  <!-- Tab group color: Grey -->
+  <string name="tab_group_color_grey">ᱯᱟᱸᱰᱨᱟᱝ</string>
   <!--
     History
 
@@ -1753,6 +1808,12 @@
     This button will dismiss the dialog.
   -->
   <string name="download_file_has_not_enough_storage_dialog_cancel_button_text">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <plurals name="downloads_delete_dialog_title">
+    <!-- Title for the download deletion confirmation dialog. The message changes depending on how many files are selected. %d is the number of files to be deleted. -->
+    <item quantity="one">ᱨᱮᱫᱽ ᱜᱮᱫᱽ ᱜᱤᱰᱤ ᱢᱮ ?</item>
+    <item quantity="two">%d ᱨᱮᱫᱽ ᱠᱤᱱ ᱜᱮᱫᱽ ᱜᱤᱰᱤ ᱢᱮ ?</item>
+    <item quantity="other">%d ᱨᱮᱫᱽ ᱠᱚ ᱜᱮᱫᱽ ᱜᱤᱰᱤ ᱢᱮ ?</item>
+  </plurals>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- Content description for the toolbar "Navigate back" button -->
@@ -1784,12 +1845,42 @@
   <string name="download_delete_multi_select_dialog_confirm">ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_device">ᱥᱟᱫᱷᱚᱱ ᱠᱷᱚᱱ ᱜᱚᱫᱽ ᱜᱤᱰᱤ ᱢᱮ</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_history">ᱥᱩᱢᱩᱝ ᱰᱟᱣᱱᱞᱳᱰ ᱱᱟᱜᱟᱢ ᱠᱷᱚᱱ ᱚᱪᱚᱜᱽ ᱢᱮ</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the negative action. -->
+  <string name="download_delete_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the positive action. -->
+  <string name="download_delete_dialog_confirm">ᱴᱷᱟᱹᱣᱠᱟᱹ</string>
   <!-- Title for the alert dialog confirmation before renaming a download item. -->
   <string name="download_rename_dialog_title">ᱨᱮᱫᱽ ᱫᱩᱦᱲᱟᱹ ᱧᱩᱛᱩᱢ ᱢᱮ</string>
   <!-- Label for the name field in the alert dialog confirmation before renaming a download item. -->
   <string name="download_rename_dialog_label">ᱧᱩᱛᱩᱢ</string>
   <string name="download_rename_dialog_confirm_button">ᱥᱟᱺᱪᱟᱣ ᱢᱮ</string>
   <string name="download_rename_dialog_cancel_button">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!--
+    Error message when renaming with a name that already exists.
+    %s is the proposed file name.
+  -->
+  <string name="download_rename_error_exists_error">ᱱᱚᱣᱟ ᱴᱷᱟᱶ ᱨᱮ “%s” ᱧᱩᱛᱩᱢᱟᱱ ᱢᱤᱫ ᱨᱮᱫᱽ ᱞᱟᱦᱟ ᱠᱷᱚᱱ ᱜᱮ ᱢᱮᱱᱟᱜᱼᱟ</string>
+  <!-- Error message when renaming with an invalid file name. -->
+  <string name="download_rename_error_invalid_name_error">ᱨᱮᱫᱽ ᱧᱩᱛᱩᱢ ᱨᱮ “/” ᱵᱮᱵᱷᱟᱨ ᱵᱟᱭ ᱜᱟᱱᱚᱜᱼᱟ ᱾</string>
+  <!-- Error message shown when a user tries to rename a downloaded file but only changes the casing (e.g., "file.txt" to "File.txt"). -->
+  <string name="download_rename_error_case_only_error">ᱟᱢ ᱡᱟᱦᱟᱸ ᱧᱩᱛᱩᱢ ᱮᱢ ᱞᱮᱫᱟ ᱚᱱᱟ ᱫᱚ ᱥᱩᱢᱩᱝ ᱢᱟᱨᱟᱝ ᱟᱨ ᱵᱟᱝ ᱠᱟᱹᱴᱤᱡ ᱪᱤᱠᱤ ᱜᱮ ᱵᱚᱫᱚᱞᱚᱜᱼᱟ ᱾ ᱮᱴᱟᱜ ᱨᱮᱫ ᱧᱩᱛᱩᱢ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
+  <!-- Title for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_title">ᱨᱮᱫᱽ ᱧᱩᱛᱩᱢ ᱵᱚᱫᱚᱞ ᱵᱚᱭ ᱜᱟᱱᱚᱜ ᱠᱟᱱᱟ</string>
+  <!-- Description message for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_description">ᱥᱤᱥᱴᱚᱢ ᱥᱮ ᱫᱚᱦᱚ ᱵᱟᱨᱚᱱ ᱠᱷᱟᱹᱛᱤᱨ ᱱᱚᱣᱟ ᱨᱮᱫᱽ ᱨᱮᱭᱟᱜ ᱧᱩᱛᱩᱢ ᱵᱚᱫᱚᱞ ᱵᱟᱭ ᱜᱟᱱᱚᱜᱼᱟ ᱾</string>
+  <string name="download_rename_error_dismiss_button">ᱴᱷᱤᱠ</string>
+  <!--
+    Title for the alert dialog to change file extension.
+    %s is the file type to change to.
+  -->
+  <string name="change_file_extension_title">ᱨᱮᱫᱽ ᱞᱮᱠᱟᱱ %s ᱨᱮ ᱵᱚᱫᱚᱞ ᱢᱮ?</string>
+  <string name="change_file_extension_description">ᱱᱚᱣᱟ ᱫᱚ ᱮᱴᱟᱜ ᱮᱯ ᱨᱮ ᱨᱮᱫᱽ ᱠᱚ ᱡᱷᱤᱡᱽ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱟᱨ ᱟᱢᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱱᱴᱷᱤᱠ ᱦᱩᱭ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
+  <string name="change_file_extension_cancel_button">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <string name="change_file_extension_confirm_button">ᱦᱮᱸ, ᱱᱚᱣᱟ ᱵᱚᱫᱚᱞ ᱢᱮ</string>
   <!-- Text for the header of in progress downloads -->
   <string name="download_header_in_progress">ᱨᱮ ᱞᱟᱦᱟᱜ ᱠᱟᱱᱟ</string>
   <!--
@@ -1862,6 +1953,16 @@
   <!-- Text for the filter button to show all other file types in the downloads list -->
   <string name="download_content_type_filter_other_1">ᱮᱴᱟᱜᱟᱜ</string>
   <!--
+    Title for the alert dialog to rename a file and/or change its download location before downloading it.
+    %s is the formatted size of the file (e.g., "12.5 MB").
+  -->
+  <string name="download_rename_and_change_location_dialog_title">ᱨᱮᱫᱽ ᱰᱟᱣᱱᱞᱳᱰ ᱢᱮ? (%s)</string>
+  <!--
+    Title for the alert dialog to rename a file and/or change its download location
+    when the file size is not available before downloading it.
+  -->
+  <string name="download_rename_and_change_location_dialog_title_with_unknown_size">ᱨᱮᱫᱽ ᱰᱟᱣᱱᱞᱚᱰᱟᱢ ᱥᱮ ?</string>
+  <!--
     WebCompat Reporter
 
     The title of the Web Compat Reporter feature. This is displayed in the top app bar.
@@ -1876,25 +1977,47 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱢᱤᱫ ᱢᱟᱱᱭᱟ URL ᱮᱢ ᱢᱮ</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">ᱪᱮᱫ ᱵᱟᱝ ᱠᱟᱹᱢᱤ ᱠᱟᱱᱟ?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">ᱵᱟᱪᱷᱟᱣ ᱠᱟᱱ ᱠᱟᱨᱚᱱ ᱥᱟᱯᱷᱟᱭ ᱢᱮ</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱠᱚᱢ ᱥᱮ ᱠᱚᱢ 10 ᱜᱚᱴᱟᱝ ᱪᱤᱠᱤ ᱟᱫᱮᱨ ᱢᱮ</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">ᱮᱴᱠᱮᱴᱚᱬᱮ ᱨᱮᱭᱟᱜ ᱛᱚᱞᱟᱥ ᱞᱟᱹᱜᱤᱫ ᱟᱞᱮ ᱜᱚᱲᱚ ᱞᱟᱹᱜᱤᱫ ᱮᱴᱠᱮᱴᱚᱬᱮ ᱵᱤᱵᱨᱚᱬ ᱛᱮ ᱞᱟᱹᱭ ᱢᱮ</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">ᱪᱮᱫ ᱨᱟᱹᱯᱩᱫ ᱮᱱᱟ ?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">ᱢᱤᱫ ᱠᱟᱨᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱢᱤᱫ ᱠᱟᱨᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">ᱮᱴᱠᱮᱴᱚᱬᱮ ᱨᱮᱭᱟᱜ ᱛᱚᱞᱟᱥ ᱞᱟᱹᱜᱤᱫ ᱟᱞᱮ ᱜᱚᱲᱚ ᱞᱟᱹᱜᱤᱫ ᱮᱴᱠᱮᱴᱚᱬᱮ ᱵᱤᱵᱨᱚᱬ ᱛᱮ ᱞᱟᱹᱭ ᱢᱮ (ᱩᱱᱟᱹᱜ ᱵᱟᱝ ᱡᱟᱹᱨᱩᱲ)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">ᱵᱟᱹᱲᱛᱤ ᱵᱟᱰᱟᱭ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">ᱠᱷᱚᱵᱚᱨ ᱵᱷᱮᱡᱟᱭ ᱢᱮ</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">ᱠᱩᱞ ᱢᱮ</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">ᱨᱤᱯᱚᱨᱴ ᱵᱷᱮᱡᱟ ᱦᱩᱭ ᱮᱱᱟ</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">ᱪᱮᱫ ᱦᱩᱭ ᱮᱱᱟ? ᱟᱢ ᱪᱮᱫ ᱦᱩᱭᱩᱜ ᱨᱮᱭᱟᱜ ᱮᱢ ᱟᱥᱟ ᱞᱮᱫᱟ? ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱮᱴᱠᱮᱴᱚᱬᱮ ᱫᱚᱦᱲᱟ ᱪᱷᱟᱯᱟ ᱞᱟᱹᱜᱤᱫ ᱫᱷᱟᱯ ᱮᱢᱚᱜ ᱢᱮ ᱾</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">ᱴᱨᱮᱠᱤᱝ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱦᱚᱛᱮᱛᱮ ᱟᱠᱚᱴ ᱟᱠᱟᱱ ᱡᱤᱱᱤᱥ ᱠᱚᱣᱟᱜ ᱛᱟᱞᱠᱟ ᱵᱷᱮᱡᱟᱭ ᱢᱮ</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">ᱠᱷᱚᱵᱚᱨ ᱧᱮᱞ ᱫᱩᱦᱲᱟᱹ</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_header">ᱧᱮᱞ ᱵᱤᱲᱟᱹᱣ ᱠᱷᱚᱵᱚᱨ ᱢᱮ</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">ᱠᱩᱞ ᱢᱮ</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">ᱣᱮᱵᱽᱥᱟᱭᱤᱴ URL ᱥᱟᱥᱟᱯᱲᱟᱣ ᱢᱮ</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">ᱥᱟᱧᱪᱟᱣ ᱢᱮ</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">ᱵᱚᱸᱫ</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -1913,6 +2036,10 @@
   <string name="webcompat_reporter_reason_account2">ᱥᱩᱦᱤᱮᱢ ᱥᱮ ᱨᱮᱡᱤᱥᱴᱚᱨ ᱵᱟᱝ ᱦᱩᱭ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">ᱥᱟᱭᱤᱴ ᱫᱚ ᱮᱰ ᱵᱞᱚᱠᱟᱨ ᱵᱚᱱᱫᱚ ᱞᱟᱹᱜᱤᱫ ᱠᱚ ᱢᱮᱛᱟᱫ ᱠᱚᱣᱟ</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">ᱵᱽᱨᱟᱣᱡᱚᱨ ᱫᱚ ᱟᱠᱚᱴ ᱟᱠᱟᱱᱟ ᱵᱟᱝᱠᱷᱟᱱ ᱵᱟᱝ ᱜᱚᱲᱚ ᱧᱟᱢ ᱟᱠᱟᱱᱟ</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱫᱚ ᱮᱲᱮ ᱞᱮᱠᱟᱱ ᱜᱮᱭᱟ</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">ᱵᱽᱨᱟᱣᱩᱡᱟᱨ ᱵᱟᱝ ᱥᱟᱯᱚᱨᱴ ᱟᱠᱟᱱᱟ ᱟᱨ ᱵᱟᱝ ᱵᱞᱚᱠ ᱟᱠᱟᱱᱟ</string>
   <!-- Broken site reason text for something else -->
@@ -1974,6 +2101,8 @@
   <string name="bookmark_error_edit_bookmark">ᱯᱩᱛᱷᱤᱪᱤᱱᱦᱟᱹ ᱥᱟᱯᱲᱟᱣ ᱵᱟᱭ ᱜᱟᱱᱚᱜ ᱠᱟᱱᱟ</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
   <string name="edit_bookmark_snackbar_action">ᱥᱟᱯᱲᱣ ᱢᱮ</string>
+  <!-- Bookmark menu select button -->
+  <string name="bookmark_menu_select_button">ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
   <!-- Bookmark menu move button -->
   <string name="bookmark_menu_move_button">ᱩᱪᱟᱹᱲ</string>
   <!-- Bookmark overflow menu edit button -->
@@ -2004,6 +2133,12 @@
   <string name="bookmark_sort_menu_a_to_z">A ᱠᱷᱚᱱ Z ᱞᱮᱠᱟᱛᱮ ᱥᱮᱴ ᱢᱮ</string>
   <!-- Label for button to sort bookmarks in reverse alphabetical order in the bookmark sorting overflow menu. -->
   <string name="bookmark_sort_menu_z_to_a">Z ᱠᱷᱚᱱ A ᱞᱮᱠᱟᱛᱮ ᱥᱮᱴ ᱢᱮ</string>
+  <!-- Label for button to import bookmarks from file. -->
+  <string name="bookmark_import_menu_button">ᱨᱮᱫᱽ ᱠᱷᱚᱱ ᱟᱹᱜᱩᱭ ᱢᱮ</string>
+  <!-- Snackbar message shown when a bookmark import attempt fails. -->
+  <string name="bookmark_import_failure_snackbar">ᱵᱩᱠᱢᱟᱨᱠ ᱵᱟᱝ ᱟᱹᱜᱩ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾ ᱫᱚᱦᱲᱟ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ ᱾</string>
+  <!-- Default name for the folder created when importing bookmarks from a file. -->
+  <string name="bookmark_import_destination_default_name">ᱵᱩᱠᱢᱟᱨᱠ ᱟᱹᱜᱩ ᱠᱟᱱᱟ</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -2046,10 +2181,18 @@
   <string name="select_bookmark_search_button_content_description">ᱯᱚᱴᱚᱢᱠᱚ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
   <!-- Content description for the overflow menu for a bookmark item. %s is a folder name or bookmark title. -->
   <string name="bookmark_item_menu_button_content_description">%s ᱞᱟᱹᱜᱤᱫ ᱡᱤᱱᱤᱥ ᱢᱮᱱᱩ</string>
+  <!-- Content description for the chevron that will open a folder on the select folder screen and display its children. %s is the title of the folder that will be opened -->
+  <string name="bookmark_select_folder_expand_folder_content_description">ᱯᱚᱴᱚᱢ ᱯᱟᱥᱱᱟᱣ ᱢᱮ: %s</string>
+  <!-- Content description for the chevron that will close a folder on the select folder screen so that its children are no longer visible. %s is the title of the folder that will be closed -->
+  <string name="bookmark_select_folder_close_folder_content_description">ᱯᱚᱴᱚᱢ ᱵᱚᱸᱫᱚᱭ ᱢᱮ: %s</string>
   <!-- Content description for the "close" button in bookmarks screen. -->
   <string name="bookmark_close_button_content_description">ᱵᱩᱩᱠᱢᱟᱨᱠᱠᱚ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!-- Content description for the Import bookmarks button in bookmarks screen. -->
+  <string name="bookmark_import_bookmarks_button_content_description">ᱨᱮᱫᱽ ᱠᱷᱚᱱ ᱟᱹᱜᱩᱭ ᱢᱮ</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">ᱵᱩᱠᱢᱟᱨᱠ ᱠᱚ ᱱᱚᱰᱮ ᱵᱚᱱᱩᱜ-ᱟ</string>
+  <!-- Title for the bookmark list empty state at the root level. -->
+  <string name="bookmark_empty_list_root_title">ᱟᱢᱟᱜ ᱡᱷᱚᱛᱚ ᱠᱩᱥᱤ ᱵᱩᱠᱢᱟᱨᱠ ᱢᱤᱫ ᱥᱟᱶᱛᱮ ᱫᱚᱦᱚ ᱠᱟᱜ ᱢᱮ</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">ᱯᱚᱴᱚᱢ ᱨᱮ ᱵᱩᱠᱢᱟᱨᱠ ᱢᱮ : %s</string>
   <!-- Text for the button to navigate to sync authentication -->
@@ -2060,6 +2203,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">ᱱᱚᱶᱟ ᱯᱚᱴᱚᱢ</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">%1$s ᱠᱷᱚᱱ %2$s ᱨᱮ ᱩᱪᱟᱹᱲ ᱮᱱᱟ</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">ᱪᱮᱫ ᱢᱮᱲᱟᱣ ᱵᱟᱭ ᱧᱟᱢ ᱞᱮᱱᱟ ᱾</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">ᱮᱴᱟᱜ ᱥᱮᱸᱫᱽᱨᱟ ᱪᱮᱥᱴᱟᱭ ᱢᱮ!</string>
   <!--
     Site Permissions
 
@@ -2231,6 +2378,24 @@
   <string name="menu_print">ᱪᱷᱟᱯᱟ</string>
   <!-- Sub-header in the dialog to share a link to another sync device -->
   <string name="share_device_subheader">ᱥᱟᱫᱷᱚᱱ ᱨᱮ ᱠᱩᱞ ᱢᱮ</string>
+  <!-- Content description for the drag handle that dismisses the Send to Device bottom sheet -->
+  <string name="send_to_devices_bottom_sheet_close_content_description">ᱥᱟᱫᱷᱚᱱ ᱨᱮ ᱵᱷᱮᱡᱟ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!-- Text for the QR code action in the native share sheet -->
+  <string name="share_qr_code">QR ᱠᱳᱰ</string>
+  <!-- Title shown in the QR code display screen -->
+  <string name="qr_code_display_title">QR ᱠᱳᱰ</string>
+  <!-- Content description for the close button in the QR code display screen -->
+  <string name="qr_code_display_close">ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!-- Heading on the QR code display screen -->
+  <string name="qr_code_display_share_nearby">ᱥᱩᱨ ᱨᱮ ᱞᱤᱝᱠ ᱦᱟᱹᱴᱤᱧ ᱢᱮ</string>
+  <!-- Body text on the QR code display screen instructing the user to have others scan the code -->
+  <string name="qr_code_display_instructions">ᱱᱚᱣᱟ ᱞᱤᱝᱠ ᱥᱩᱨ ᱨᱮᱱ ᱦᱚᱲ ᱠᱚ ᱥᱟᱶ ᱦᱟᱹᱴᱤᱧ ᱞᱟᱹᱜᱤᱫ, ᱞᱟᱛᱟᱨ ᱨᱮ ᱮᱢ ᱟᱠᱟᱱ QR ᱠᱳᱰ ᱥᱠᱮᱱ ᱢᱮ ᱾</string>
+  <!-- Label for the download button on the QR code display screen -->
+  <string name="qr_code_display_download">ᱰᱟᱣᱱᱞᱳᱰ</string>
+  <!-- Toast shown when the QR code is successfully saved to Downloads -->
+  <string name="qr_code_download_success">QR ᱠᱳᱰ ᱰᱟᱩᱱᱞᱳᱰ ᱞᱟᱹᱜᱤᱫ ᱥᱟᱧᱪᱟᱣ ᱟᱠᱟᱱᱟ</string>
+  <!-- Toast shown when saving the QR code to Downloads fails -->
+  <string name="qr_code_download_failure">QR ᱠᱳᱰ ᱥᱟᱧᱪᱟᱣ ᱰᱤᱜᱟᱹᱣ ᱮᱱᱟ</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
   <string name="share_link_all_apps_subheader">ᱡᱚᱛᱚ ᱠᱟᱹᱢᱤᱠᱚ</string>
   <!-- Sub-header in the dialog to share a link to an app from the most-recent sorted list -->
@@ -2299,6 +2464,8 @@
   <string name="preferences_take_survey">ᱥᱚᱨᱵᱷᱮ ᱤᱫᱤ ᱢᱮ</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">ᱵᱟᱝᱟ ᱥᱟᱨᱦᱟᱣ</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">ᱥᱤᱥᱴᱚᱢ ᱚᱪᱚᱜ ᱴᱟᱴᱠᱟ ᱚᱰᱚᱠ ᱡᱷᱚᱜ ᱡᱷᱤᱡᱽ ᱵᱟᱝ ᱜᱟᱱ ᱞᱮᱱᱟ, ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱥᱤᱥᱴᱚᱢ ᱚᱪᱚᱜ ᱠᱟᱹᱢᱤ ᱥᱚᱡᱷᱮ ᱵᱮᱵᱷᱟᱨ ᱢᱮ ᱾</string>
   <!--
     Snackbar
 
@@ -2459,6 +2626,20 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">​%s​ ᱫᱚ ᱟᱭᱢᱟ ᱥᱚᱢᱟᱱ ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱠᱚ ᱴᱷᱮᱱ ᱠᱷᱚᱱ ᱚᱱᱞᱟᱭᱤᱱ ᱨᱩᱠᱷᱤᱭᱟᱹᱭ ᱢᱮᱟᱭ ᱾</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟᱭ</item>
+    <item quantity="two">%d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟ ᱠᱤᱱ</item>
+    <item quantity="other">%d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟ ᱠᱚ</item>
+  </plurals>
+  <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
+  <string name="trackers_blocked_empty">ᱟᱢ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱜᱮᱭᱟᱢ</string>
+  <!-- Text shown below the trackers blocked card with typing animation -->
+  <string name="help_catch_trackers">ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱥᱟᱵ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢ ᱢᱮ</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">ᱱᱟᱯ (ᱢᱩᱞ ᱯᱷᱮᱲᱟᱛ)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2837,14 +3018,126 @@
   <string name="saved_logins_sort_strategy_last_used">ᱢᱟᱲᱟᱝ ᱵᱮᱵᱷᱟᱨᱟᱜ</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">ᱫᱟᱱᱟᱝ ᱥᱟᱵᱟᱫᱽ ᱢᱮᱱᱩ ᱥᱮᱴ ᱢᱮ</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">ᱨᱮᱫᱽ ᱠᱷᱚᱱ ᱟᱹᱜᱩᱭ ᱢᱮ</string>
+  <!--
+    Email Masks
+
+    Title for the Email Masks in the settings menu
+  -->
+  <string name="preferences_email_masks">ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱠᱚ</string>
+  <!-- Title for the Suggest Email Masks toggle -->
+  <string name="preferences_email_masks_suggest_title">ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱥᱚᱞᱦᱟ ᱮᱢᱚᱜ ᱢᱮ</string>
+  <!-- Summary for the Suggest Email Masks toggle. -->
+  <string name="preferences_email_masks_suggest_summary">ᱟᱢᱟᱜ ᱤᱱᱵᱚᱠᱥ ᱥᱯᱟᱢ ᱠᱷᱚᱱ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱞᱟᱹᱜᱤᱫ ᱟᱢᱟᱜ ᱥᱟᱹᱨᱤ ᱤᱢᱮᱞ ᱩᱠᱩᱭ ᱢᱮ ᱾ ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱥᱟᱭᱤᱴ ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱵᱟᱠᱚ ᱥᱟᱯᱚᱨᱴ ᱮᱫᱟ ᱾</string>
+  <!-- Text that links to additional information about the Email Masks -->
+  <string name="preferences_email_masks_suggest_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Title for the Manage Email Masks links to Firefox Relay dashboard -->
+  <string name="preferences_email_masks_manage_title">ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱠᱚ ᱥᱟᱸᱵᱽᱲᱟᱣ ᱢᱮ</string>
+  <!-- The message displayed when a user has used all of their free-tier email masks, so now the application will choose an existing one at random. -->
+  <string name="email_masks_max_free_tier_reached">ᱟᱢ ᱟᱢᱟᱜ 5 ᱯᱷᱨᱤ ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱟᱠᱟᱫᱟ, ᱚᱱᱟᱛᱮ ᱟᱞᱮ ᱟᱢ ᱞᱟᱹᱜᱤᱫ ᱢᱤᱫᱴᱟᱹᱝ ᱞᱮ ᱵᱟᱪᱷᱟᱣ ᱠᱮᱫᱟ ᱫᱚᱦᱲᱟ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱾</string>
+  <!-- The message displayed when there was an error with the email mask or Firefox Account services. -->
+  <string name="email_masks_error_retrieving_masks">ᱤᱢᱮᱞ ᱢᱟᱥᱠ ᱫᱚ ᱱᱤᱛᱚᱜ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾ ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱴᱤᱯᱤᱡ ᱛᱟᱭᱚᱢ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
+  <!--
+    Firefox browser VPN (a browser-only proxy, distinct from the Mozilla VPN service)
+
+    Title for the browser VPN entry in the settings list
+  -->
+  <string name="preferences_ip_protection_title_2">ᱢᱩᱪᱟᱹᱫᱛᱮᱭᱟᱨ ᱠᱟᱱ VPN</string>
+  <!-- Label for the BETA badge for the browser VPN entry in the settings list -->
+  <string name="preferences_ip_protection_beta_badge_label">BETA</string>
+  <!-- Title for the browser VPN settings screen (displayed in the app bar) -->
+  <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">ᱯᱟᱹᱪᱷᱞᱟᱹᱥᱮᱱ ᱪᱟᱞᱟᱜ ᱢᱮ</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">%s ᱨᱮᱭᱟᱜ ᱵᱤᱞᱴ-ᱤᱱ VPN</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">ᱟᱢᱟᱜ ᱴᱷᱟᱶ ᱩᱠᱩ ᱠᱟᱛᱮ ᱵᱟᱹᱲᱛᱤ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱥᱟᱶ ᱵᱽᱨᱟᱣᱩᱡᱽ ᱢᱮ, ᱥᱟᱱᱟᱢ ᱦᱚᱲᱟᱜ Wi-Fi ᱨᱮᱦᱚᱸ ᱾ %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
   <string name="ip_protection_data_limit_label">ᱪᱟᱸᱫᱚ ᱰᱟᱴᱟ ᱥᱤᱢᱟᱹ</string>
+  <!--
+    Data usage shown on the browser VPN settings screen.
+    %1$.1f is the data remaining in GB (for example "8.3").
+    %2$.1f is the total monthly allowance in GB (for example "50.0").
+  -->
+  <string name="ip_protection_data_limit_value">%2$.1f GB ᱠᱷᱚᱱ %1$.1f GB ᱥᱟᱨᱮᱡ ᱠᱟᱱᱟ</string>
+  <!--
+    Text shown below the data usage bar describing when the monthly allowance resets.
+    %1$.0f is the total monthly data allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_reset_info">ᱥᱟᱱᱟᱢ ᱪᱟᱸᱫᱚ ᱨᱮᱭᱟᱜ ᱯᱩᱭᱞᱩ ᱢᱟᱦᱟᱸ ᱦᱤᱞᱚᱜ %1$.0f GB ᱨᱮ ᱨᱤᱥᱮᱴᱚᱜᱼᱟ ᱾</string>
+  <!-- Header for the browser VPN `location` section -->
+  <string name="ip_protection_location_section">ᱡᱟᱭᱜᱟ</string>
+  <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_label">ᱵᱟᱛᱟᱣᱟᱜ</string>
+  <!-- Description for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_description">ᱟᱢ ᱞᱟᱹᱜᱤᱫ ᱡᱷᱚᱛᱚ ᱠᱷᱚᱱ ᱩᱥᱟᱹᱨᱟ VPN ᱴᱷᱟᱶ ᱵᱟᱪᱷᱟᱣ ᱟᱭ ᱾</string>
+  <!-- Badge label shown in the menu item when the browser VPN is active -->
+  <string name="preferences_ip_protection_on">ᱪᱟᱹᱞᱩ</string>
+  <!-- Badge label shown in the menu item when the browser VPN is off -->
+  <string name="preferences_ip_protection_off">ᱵᱚᱸᱫᱚ</string>
+  <!-- Badge label shown in the menu item while the browser VPN is connecting -->
+  <string name="ip_protection_menu_connecting">ᱡᱚᱲᱟᱣᱚᱜ ᱠᱟᱱᱟ…</string>
+  <!-- Badge label shown in the menu item when the browser VPN is paused -->
+  <string name="ip_protection_menu_paused">ᱛᱷᱩᱢ</string>
+  <!-- Badge label shown in the menu item when the browser VPN has an error -->
+  <string name="ip_protection_menu_error">ᱵᱷᱩᱞ</string>
+  <!-- Badge label shown in the menu item when the user is eligible to use the browser VPN but should authenticate or authorize it first. -->
+  <string name="ip_protection_menu_auth_required">ᱪᱮᱥᱴᱟ ᱵᱤᱲᱟᱹᱣ ᱢᱮ</string>
+  <!-- Content description for the chevron button that opens the browser VPN settings screen -->
+  <string name="ip_protection_navigate_settings">VPN ᱥᱟᱡᱟᱣ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
+  <!--
+    Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_menu_limit_reached">%1$d GB ᱥᱤᱢᱟᱹ ᱥᱮᱴᱮᱨ ᱮᱱᱟ</string>
+  <!--
+    Error message shown on the browser VPN settings screen when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_description">ᱟᱢ ᱟᱢᱟᱜ VPN ᱰᱟᱴᱟ ᱨᱮᱭᱟᱜ ᱡᱚᱛᱚ %1$d GB ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱟᱠᱟᱫᱟ ᱾ ᱫᱚᱥᱟᱨ ᱪᱟᱸᱫᱚ ᱨᱮ ᱟᱫᱮᱨ ᱨᱤᱥᱮᱴ ᱦᱩᱭᱩᱜᱼᱟ ᱾</string>
+  <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
+  <string name="ip_protection_toolbar_pill_label">VPN ᱪᱟᱹᱞᱩᱭ ᱢᱮ</string>
+  <!-- Accessibility description for the browser VPN pill in the address bar when the VPN has been activated -->
+  <string name="ip_protection_toolbar_pill_description">VPN ᱪᱟᱹᱞᱩ ᱠᱟᱱᱟ</string>
+  <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_get_started">ᱫᱮᱞᱟ ᱮᱛᱦᱚᱵ ᱞᱮᱜᱮ ᱵᱚᱱ</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">ᱡᱚᱲᱟᱣᱚᱜ ᱠᱟᱱᱟ…</string>
+  <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_onboarding_card_headline">%s ᱨᱮᱭᱟᱜ ᱛᱮᱭᱟᱨ ᱴᱷᱤᱠ VPN ᱪᱮᱥᱴᱟᱭ ᱢᱮ</string>
+  <!--
+    The body of the VPN onboarding card.
+    %1$s is a link using ip_protection_onboarding_body_link (“Browse with extra protection”) as text. It links to a support article about VPN on Firefox.
+    %2$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_onboarding_body">%1$s ᱟᱢᱟᱜ ᱴᱷᱟᱶ ᱩᱠᱩ ᱠᱟᱛᱮ, ᱥᱟᱱᱟᱢ ᱦᱚᱲ Wi-Fi ᱨᱮᱦᱚᱸ ᱾ ᱥᱟᱱᱟᱢ ᱪᱟᱸᱫᱚ ᱨᱮ %2$d GB ᱯᱷᱨᱤ ᱧᱟᱢ ᱢᱮ ᱾</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link">ᱵᱟᱹᱲᱛᱤ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱥᱟᱶ ᱵᱽᱨᱟᱣᱩᱡᱽ ᱢᱮ</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">ᱟᱢᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱟᱨᱦᱚᱸ ᱯᱨᱟᱭᱣᱮᱴ ᱟᱨ ᱴᱨᱮᱥ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱞᱟᱹᱜᱤᱫ ᱱᱚᱣᱟ ᱪᱟᱹᱞᱩᱭ ᱢᱮ ᱾ %1$s ᱦᱚᱛᱮᱛᱮ ᱟᱱᱞᱤᱢᱤᱴᱮᱰ ᱵᱮᱱᱰᱣᱤᱰᱛᱷ ᱧᱟᱢ ᱞᱟᱹᱜᱤᱫ ᱱᱤᱛᱚᱜ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾ %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Label for the dismiss button on the onboarding bottom sheet. -->
+  <string name="ip_protection_onboarding_not_now_button">ᱱᱤᱛᱚᱜ ᱫᱚ ᱵᱟᱝᱟ</string>
+  <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
+  <string name="ip_protection_connection_error_snackbar">VPN ᱥᱟᱶ ᱵᱟᱝ ᱡᱚᱯᱲᱟᱣ ᱫᱟᱲᱮᱭᱟᱜ ᱠᱟᱱᱟ ᱾ ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱴᱤᱯᱤᱡ ᱛᱟᱭᱚᱢ ᱫᱚᱦᱲᱟᱹ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
+  <!--
+    Snackbar (in-app pop-up notification) text to signal the browser VPN has reached the monthly data limit.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_snackbar">%1$d GB ᱨᱮᱭᱟᱜ VPN ᱰᱟᱴᱟ ᱵᱮᱵᱷᱟᱨ ᱦᱩᱭ ᱟᱠᱟᱱᱟ ᱾ ᱫᱚᱥᱟᱨ ᱪᱟᱸᱫᱚ ᱨᱮ ᱟᱫᱮᱨ ᱨᱤᱥᱮᱴ ᱦᱩᱭᱩᱜᱼᱟ ᱾</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">ᱥᱟᱡᱟᱣ ᱠᱚ</string>
   <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
   <string name="ip_protection_settings_description" tools:ignore="UnusedResources">ᱟᱢᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱟᱨᱦᱚᱸ ᱯᱨᱟᱭᱣᱮᱴ ᱟᱨ ᱴᱨᱮᱥ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱞᱟᱹᱜᱤᱫ ᱣᱤ ᱯᱤ ᱮᱱ ᱪᱟᱹᱞᱩᱭ ᱢᱮ ᱾</string>
   <!-- Title shown on the browser VPN settings screen for location selection section. -->
@@ -2855,6 +3148,20 @@
   <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN ᱥᱟᱶ ᱟᱨᱦᱚᱸ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱢᱮ</string>
   <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
   <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">᱓᱐᱐+ ᱴᱷᱟᱶ ᱠᱷᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ ᱟᱨ ᱟᱢᱟᱜ ᱡᱚᱛᱚ ᱮᱯᱥ ᱠᱚ ᱕ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱦᱟᱹᱵᱤᱡ ᱨᱟᱠᱷᱟ ᱫᱚᱦᱚᱭ ᱢᱮ ᱾</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN ᱦᱟᱢᱮᱴ ᱡᱚᱝ ᱢᱮ</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">VPN ᱴᱷᱟᱶ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="BrandUsage">Firefox ᱫᱚ ᱡᱷᱚᱛᱚ ᱠᱷᱚᱱ ᱩᱥᱟᱹᱨᱟ ᱴᱷᱟᱶ ᱧᱟᱢᱟᱭ</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">ᱴᱷᱟᱶ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾ ᱮᱴᱟᱜ ᱴᱷᱟᱶ ᱵᱟᱪᱷᱟᱣ ᱢᱮ᱾</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">ᱵᱟᱪᱷᱟᱣ ᱟᱠᱟᱱ VPN ᱴᱷᱟᱶ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾ ᱥᱚᱞᱦᱟ ᱟᱠᱟᱱ ᱴᱷᱟᱶ ᱥᱟᱶ ᱡᱚᱯᱲᱟᱣ ᱢᱮᱱᱟᱜᱼᱟ ᱾</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">ᱞᱟᱦᱟ ᱨᱮᱱᱟᱜ ᱴᱷᱟᱶ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">ᱥᱚᱞᱦᱟ ᱟᱠᱟᱱ ᱴᱷᱟᱶ ᱥᱟᱶ ᱡᱚᱯᱲᱟᱣ ᱢᱮᱱᱟᱜᱼᱟ ᱾</string>
   <!--
     Autofill
 
@@ -3151,6 +3458,16 @@
     which navigates the user to a screen displaying all the shortcuts.
   -->
   <string name="homepage_shortcuts_show_all_content_description">ᱡᱷᱚᱛᱚ ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ ᱫᱮᱠᱷᱟᱣᱢᱮ</string>
+  <!-- Label for the "Add shortcut" button displayed as a tile. -->
+  <string name="homepage_shortcuts_add_shortcut">ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ ᱥᱮᱞᱮᱫᱽ ᱢᱮ</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">ᱚᱲᱟᱜ ᱥᱟᱦᱴᱟ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">ᱣᱮᱵᱽᱥᱟᱭᱤᱴ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
+  <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
+  <string name="homepage_shortcuts_add_website_title">ᱢᱤᱫ ᱣᱮᱵᱽᱥᱟᱭᱤᱴ URL ᱟᱫᱮᱨ ᱢᱮ</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">ᱧᱩᱛᱩᱢᱟᱱ ᱥᱟᱭᱤᱴ</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ ᱞᱤᱢᱤᱴ ᱥᱮᱴᱮᱨ ᱦᱩᱭ ᱮᱱᱟ</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3247,6 +3564,8 @@
     Header text for a section on the home screen.
   -->
   <string name="pocket_stories_header_2">ᱠᱟᱹᱦᱱᱤᱠᱚ</string>
+  <!-- Header text for the Stories screen. -->
+  <string name="stories_screen_text_news">ᱠᱷᱚᱵᱚᱨ</string>
   <!--
     Context description text for the "Discover more" button in the stories home screen section
     which navigates the user to a screen displaying more stories.
@@ -3318,6 +3637,8 @@
   <string name="translation_error_could_not_translate_warning_text">ᱛᱚᱨᱡᱚᱢᱟ ᱡᱷᱚᱜ ᱵᱷᱩᱞ ᱮᱴᱠᱮᱴᱚᱬᱮ ᱦᱩᱭᱮᱱᱟ ᱾ ᱫᱟᱭᱟᱠᱟᱛᱮ ᱫᱩᱦᱲᱟᱹ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">ᱯᱟᱹᱨᱥᱤ ᱞᱟᱫᱮ ᱵᱟᱝ ᱜᱟᱱ ᱞᱮᱱᱟ ᱾ ᱟᱢᱟᱜ ᱤᱱᱴᱚᱨᱱᱮᱴ ᱡᱩᱲᱟᱹᱣ ᱧᱮᱞ ᱢᱮ ᱟᱨ ᱫᱩᱦᱲᱟᱹ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
+  <!-- The title of the warning card informs the user that translations from a language are not supported yet. %1$s is the name of the source language. -->
+  <string name="translation_error_language_not_supported_warning_text_2">ᱤᱠᱟᱹ, ᱟᱞᱮ %1$s ᱯᱟᱹᱨᱥᱤ ᱱᱤᱛ ᱫᱷᱟᱹᱵᱤᱡ ᱵᱟᱞᱮ ᱥᱚᱦᱚᱫ ᱠᱟᱫᱟ ᱾</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">ᱛᱚᱨᱡᱚᱢᱟᱜ ᱠᱟᱱᱟ …</string>
   <!--
@@ -3371,6 +3692,12 @@
   <string name="translation_settings_automatic_never_translate_sites">ᱱᱚᱶᱟ ᱥᱟᱭᱤᱴᱠᱚᱫᱚ ᱛᱮᱥ ᱦᱚᱸ ᱟᱞᱚᱢ ᱛᱚᱨᱡᱚᱢᱟᱭᱟ</string>
   <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
   <string name="translation_settings_download_language">ᱯᱟᱹᱨᱥᱤᱠᱚ ᱰᱟᱣᱱᱞᱚᱰ ᱢᱮ</string>
+  <!-- Toggle switch title and description for the translation settings control. -->
+  <string name="translation_settings_control_title">ᱛᱚᱨᱡᱚᱢᱟ ᱠᱚ</string>
+  <!-- Description for the translation settings toggle switch. -->
+  <string name="translation_settings_control_description">ᱟᱢᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱨᱮ ᱥᱟᱱᱟᱢ ᱛᱚᱨᱡᱚᱢᱟ ᱟᱹᱯᱱᱟᱹᱛ ᱛᱟᱦᱮᱱᱟ ᱾</string>
+  <!-- Clickable text for the translations settings item that links to a website. -->
+  <string name="translation_settings_control_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
   <!--
     Automatic translation preference screen
 
@@ -3528,6 +3855,20 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s ᱨᱩᱠᱷᱤᱭᱟᱹ ᱨᱮ ᱢᱮᱱᱟᱜ ᱠᱟᱹᱫᱮᱭᱟ</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱟᱠᱟᱱᱭ ᱾</item>
+    <item quantity="two">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱟᱠᱟᱱᱟ ᱠᱤᱱ ᱾</item>
+    <item quantity="other">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱟᱠᱟᱱᱟ ᱠᱚ ᱾</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">ᱟᱢ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱜᱮᱭᱟᱢ ᱾</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">ᱵᱟᱲᱦᱟᱣᱟᱠᱟᱱ ᱯᱟᱸᱡᱟ ᱨᱚᱯᱷᱟ</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3549,6 +3890,69 @@
   <string name="protection_panel_privacy_and_security_settings_2">ᱯᱨᱟᱭᱣᱮᱥᱤ ᱥᱮᱴᱤᱝ</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">ᱪᱷᱟᱹᱰ ᱠᱚ</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟᱭ</item>
+    <item quantity="two">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟ ᱠᱤᱱ</item>
+    <item quantity="other">ᱱᱚᱣᱟ ᱥᱟᱭᱤᱴ ᱨᱮ %1$d ᱴᱨᱮᱠᱟᱨ ᱟᱠᱚᱴ ᱟᱠᱟᱱᱟ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d ᱥᱟᱸᱣᱛᱟ ᱢᱤᱰᱤᱭᱟ ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ</item>
+    <item quantity="two">%1$d ᱥᱟᱸᱣᱛᱟ ᱢᱤᱰᱤᱭᱟ ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱠᱤᱱ</item>
+    <item quantity="other">%1$d ᱥᱟᱸᱣᱛᱟ ᱢᱤᱰᱤᱭᱟ ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d ᱠᱨᱚᱥᱼᱥᱟᱭᱤᱴ ᱜᱷᱮᱨ ᱮᱥᱮᱫ ᱠᱩᱠᱤ</item>
+    <item quantity="two">%1$d ᱠᱨᱚᱥᱼᱥᱟᱭᱤᱴ ᱜᱷᱮᱨ ᱮᱥᱮᱫ ᱠᱩᱠᱤ ᱠᱤᱱ</item>
+    <item quantity="other">%1$d ᱠᱨᱚᱥᱼᱥᱟᱭᱤᱴ ᱜᱷᱮᱨ ᱮᱥᱮᱫ ᱠᱩᱠᱤ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d ᱠᱨᱭᱯᱴᱚᱢᱟᱭᱱᱟᱹᱨ</item>
+    <item quantity="two">%1$d ᱠᱨᱭᱯᱴᱚᱢᱟᱭᱱᱟᱹᱨ ᱠᱤᱱ</item>
+    <item quantity="other">%1$d ᱠᱨᱭᱯᱴᱚᱢᱟᱭᱱᱟᱹᱨ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d ᱴᱤᱯᱟᱹᱪᱷᱟᱯ</item>
+    <item quantity="two">ᱴᱤᱯᱟᱹᱪᱷᱟᱯ ᱠᱤᱱ</item>
+    <item quantity="other">ᱴᱤᱯᱟᱹᱪᱷᱟᱯ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱡᱤᱱᱤᱥ</item>
+    <item quantity="two">%1$d ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱡᱤᱱᱤᱥ ᱠᱤᱱ</item>
+    <item quantity="other">%1$d ᱯᱟᱧᱡᱟ ᱫᱟᱱᱟᱲ ᱡᱤᱱᱤᱥ ᱠᱚ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">ᱱᱤᱭᱟᱹ ᱦᱟᱴ %1$d ᱴᱨᱮᱠᱚᱨ ᱟᱠᱚᱴ ᱠᱟᱱᱟᱭ</item>
+    <item quantity="two">ᱱᱤᱭᱟᱹ ᱦᱟᱴ %1$d ᱴᱨᱮᱠᱚᱨ ᱠᱤᱱ ᱟᱠᱚᱴ ᱮᱱᱟ</item>
+    <item quantity="other">ᱱᱤᱭᱟᱹ ᱦᱟᱴ %1$d ᱴᱨᱮᱠᱚᱨ ᱠᱚ ᱟᱠᱚᱴ ᱮᱱᱟ</item>
+  </plurals>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -3569,6 +3973,15 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">ᱫᱟᱨᱟᱭ ᱛᱮ ᱧᱮᱞ ᱢᱮᱲᱟᱣ %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">ᱰᱮᱥᱵᱚᱨᱰ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!--
+    Text for the connection security panel when the site uses a QWAC.
+    %s is a placeholder for the organization for which the certificate was issued.
+  -->
+  <string name="connection_security_panel_issued_to">%s ᱛᱮ ᱮᱢ ᱪᱟᱞ ᱢᱮ</string>
+  <!-- Text for the connection security panel when the site uses a QWAC. -->
+  <string name="connection_security_panel_qualified_certificate">ᱨᱮᱜᱩᱞᱮᱥᱚᱱ (EU) 2024/1183 ᱫᱟᱨᱟᱭᱛᱮ ᱞᱟᱹᱭ ᱟᱠᱟᱱ ᱞᱮᱠᱟ ᱥᱩᱦᱤ ᱜᱟᱱ ᱠᱟᱱᱟᱭ ᱾</string>
   <!--
     Debug drawer
 
@@ -3659,6 +4072,16 @@
   <string name="likert_scale_option_7" tools:ignore="BrandUsage,UnusedResources">Firefox ᱨᱮ ᱤᱧ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱟᱹᱧ ᱵᱮᱵᱷᱟᱨ ᱟ</string>
   <!-- Option for likert scale -->
   <string name="likert_scale_option_8" tools:ignore="UnusedResources">ᱤᱧ ᱥᱤᱝᱠ ᱵᱟᱹᱧ ᱵᱮᱵᱷᱟᱨ ᱟ</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_slow_or_buggy" tools:ignore="UnusedResources">ᱱᱚᱣᱟ ᱫᱚ ᱵᱟᱹᱭ ᱵᱟᱹᱭ ᱥᱮ ᱵᱚᱜᱭ ᱜᱮᱭᱟ</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_features_hard_to_find_or_missing" tools:ignore="UnusedResources">ᱯᱷᱤᱪᱟᱨ ᱠᱚ ᱧᱟᱢ ᱞᱟᱹᱜᱤᱫ ᱟᱨ ᱵᱟᱝ ᱟᱫ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱜᱮᱭᱟ</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_confusing_or_hard_to_use" tools:ignore="UnusedResources">ᱱᱚᱣᱟ ᱫᱚ ᱩᱞᱡᱷᱟᱹᱣ ᱥᱮ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱜᱮᱭᱟ</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_its_okay" tools:ignore="UnusedResources">ᱱᱚᱣᱟ ᱫᱚ ᱴᱷᱤᱠ ᱜᱮᱭᱟ, ᱢᱮᱱᱠᱷᱟᱱ ᱮᱴᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱟᱨ ᱠᱷᱚᱱ ᱵᱟᱝ ᱵᱮᱥ ᱜᱮᱭᱟ</string>
+  <!-- Option for likert scale. Note: The word "Firefox" should NOT be translated. -->
+  <string name="likert_scale_option_i_plan_to_keep_using" tools:ignore="BrandUsage,UnusedResources">ᱤᱧ Firefox ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱮ ᱮᱫᱟᱹᱧ</string>
   <!-- Text shown in prompt for printing microsurvey. "sec" It's an abbreviation for "second". Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_prompt_printing_title" tools:ignore="BrandUsage,UnusedResources">Firefox ᱨᱮ ᱪᱷᱟᱯᱟ ᱜᱟᱱᱪᱷᱚ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢᱚᱜ ᱢᱮ ᱾ ᱱᱚᱶᱟ ᱫᱚ ᱢᱤᱫ ᱴᱤᱡ ᱜᱟᱱ ᱚᱠᱛᱚ ᱤᱫᱤᱭᱟᱭ</string>
   <!-- Text shown in prompt for search microsurvey. Note: The word "Firefox" should NOT be translated. -->
@@ -3673,6 +4096,28 @@
   <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">Firefox ᱨᱮ ᱥᱮᱸᱫᱽᱨᱟ ᱠᱟᱹᱢᱤᱦᱚᱨᱟ ᱥᱟᱞᱟᱜ ᱛᱤᱱᱟᱹᱜ ᱨᱟᱹᱥᱠᱟᱹ ᱢᱮᱱᱟᱢᱟᱸ ?</string>
   <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox ᱨᱮ ᱥᱤᱝᱠ ᱠᱟᱹᱢᱤᱦᱚᱨᱟ ᱥᱟᱞᱟᱜ ᱛᱤᱱᱟᱹᱜ ᱨᱟᱹᱥᱠᱟᱹ ᱢᱮᱱᱟᱢᱟᱸ ?</string>
+  <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
+  <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox ᱥᱩᱫᱷᱨᱟᱹᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱞᱮ ᱜᱚᱲᱚ ᱞᱮᱢ ᱾ ᱱᱤᱛ ᱦᱟᱵᱤᱡ ᱟᱢᱟᱜ ᱟᱹᱱᱟᱹᱭᱠᱟᱹᱣ ᱚᱠᱟᱴᱟᱜ ᱵᱮᱥ ᱛᱮ ᱵᱚᱨᱱᱚᱱ ᱮᱢᱟᱭᱟ ?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">ᱟᱢᱟᱜ ᱢᱚᱱᱚᱛ ᱫᱚ ᱢᱟᱱᱚᱛ ᱜᱮᱭᱟ ᱾ ᱟᱢ ᱪᱮᱫᱟᱜ ᱮᱢ ᱚᱪᱚᱜᱽ ᱮᱫᱟ?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">ᱱᱚᱣᱟ ᱫᱚ ᱵᱟᱹᱭ ᱵᱟᱹᱭ ᱟ ᱥᱮ ᱵᱟᱝ ᱯᱟᱹᱛᱭᱟᱹᱣᱟᱱ ᱜᱮᱭᱟ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">ᱣᱮᱵᱽᱥᱟᱭᱤᱴ ᱠᱚ ᱵᱮᱥ ᱞᱮᱠᱟ ᱵᱟᱝ ᱠᱚ ᱠᱟᱹᱢᱤ ᱞᱮᱫᱟ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">ᱟᱫ ᱠᱟᱱ ᱜᱩᱱ ᱠᱚ ᱤᱧ ᱞᱟᱹᱠᱛᱤᱭᱟᱹᱧ ᱠᱟᱱᱟ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">ᱵᱷᱤᱰᱤᱭᱳ, ᱰᱟᱣᱩᱱᱞᱳᱰ, ᱵᱟᱝᱠᱷᱟᱱ ᱢᱤᱰᱤᱭᱟ ᱵᱟᱝ ᱠᱟᱹᱢᱤ ᱞᱮᱫᱟ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">ᱱᱚᱣᱟ ᱫᱚ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱜᱮᱭᱟ ᱵᱟᱝᱠᱷᱟᱱ ᱵᱟᱹᱲᱤᱡ ᱰᱤᱡᱟᱭᱤᱱ ᱟᱠᱟᱱᱟ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">ᱯᱨᱟᱭᱣᱮᱥᱤ ᱵᱟᱝᱠᱷᱟᱱ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱪᱤᱱᱛᱟᱹ</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">ᱢᱚᱱᱚᱛ ᱡᱚᱢᱟᱣ ᱢᱮ ᱟᱨ ᱚᱪᱚᱜᱽ ᱢᱮ</string>
   <!--
     Accessibility
 
@@ -3979,6 +4424,8 @@
   <string name="settings_search_no_results_title">ᱪᱮᱫ ᱦᱚᱸ ᱵᱟᱭ ᱧᱟᱢ ᱞᱮᱱᱟ</string>
   <!-- Sub-message displayed when the search field is not empty but search results is empty. -->
   <string name="settings_search_no_results_message">ᱮᱴᱟᱜᱟᱜ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱤᱰᱟᱹᱣ ᱢᱮ</string>
+  <!-- Content Description for the button to open Settings Search (to search through settings). -->
+  <string name="settings_search_button_content_description">ᱥᱮᱴᱤᱝ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱩᱛᱟᱢ</string>
   <!-- ==== Terms of use pop up prompt ==== -->
 
   <!-- Title for the pop up prompt -->
@@ -4021,6 +4468,221 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">ᱟᱢ ᱵᱟᱹᱲᱛᱤ ᱪᱮᱫ ᱫᱟᱲᱮᱭᱟᱜᱼᱟᱢ %1$s᱾</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">ᱱᱚᱰᱮ</string>
+  <!--
+    Sports widget
+
+    Title text shown at the top of the sports widget country selector, encouraging the user to pick a national team to follow.
+  -->
+  <string name="sports_widget_country_selector_title">ᱟᱢᱟᱜ ᱫᱚᱞ ᱯᱟᱧᱡᱟᱭ ᱢᱮ</string>
+  <!-- Section header for the North America region in the sports widget country selector. -->
+  <string name="sports_widget_confederation_north_america">ᱠᱚᱸᱭᱮ ᱟᱢᱮᱨᱤᱠᱟ</string>
+  <!-- Section header for the Africa confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_africa">ᱟᱯᱷᱨᱤᱠᱟ</string>
+  <!-- Section header for the Asia confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_asia">ᱮᱥᱤᱭᱟ</string>
+  <!-- Section header for the CONCACAF confederation group in the sports widget country selector. "CONCACAF" is the abbreviation for "Confederation of North, Central America and Caribbean Association Football". -->
+  <string name="sports_widget_confederation_concacaf">CONCACAF</string>
+  <!-- Section header for the Europe confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_europe">ᱭᱩᱨᱚᱯ</string>
+  <!-- Section header for the Oceania confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_oceania">ᱚᱥᱮᱱᱤᱭᱟ</string>
+  <!-- Section header for the South America confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_south_america">ᱮᱛᱚᱢ ᱟᱢᱮᱨᱤᱠᱟ</string>
+  <!-- Country name for England in the sports widget. England cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_england">ᱤᱝᱞᱟᱸᱰ</string>
+  <!-- Country name for Scotland in the sports widget. Scotland cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_scotland">ᱥᱠᱚᱴᱞᱮᱸᱰ</string>
+  <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
+  <string name="sports_widget_match_live">ᱞᱟᱭᱤᱵᱷ</string>
+  <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
+  <string name="sports_widget_champions_title">᱒᱐᱒᱖ ᱣᱟᱨᱞᱰ ᱠᱚᱯ ᱪᱮᱢᱯᱤᱭᱚᱱᱥ</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
+  <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">ᱨᱚᱱᱚᱨ ᱚᱯᱷ</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
+  <string name="sports_widget_third_place_title">ᱛᱮᱥᱟᱨ ᱡᱟᱭᱜᱟ</string>
+  <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
+  <string name="sports_widget_round_of_32">ᱨᱟᱣᱱᱰ 32</string>
+  <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
+  <string name="sports_widget_round_of_16">16 ᱨᱟᱣᱱᱰ</string>
+  <!-- Round name shown on the sports widget for the quarter-finals stage in the soccer tournament. -->
+  <string name="sports_widget_quarter_final">ᱠᱣᱟᱴᱟᱨ-ᱯᱷᱟᱭᱱᱟᱞ</string>
+  <!-- Round name shown on the sports widget for the semi-finals stage in the soccer tournament. -->
+  <string name="sports_widget_semi_final">ᱥᱮᱢᱤ-ᱯᱷᱟᱭᱱᱟᱞ</string>
+  <!-- Round name shown on the sports widget for the final stage in the soccer tournament. -->
+  <string name="sports_widget_final">ᱯᱷᱟᱭᱱᱟᱞ</string>
+  <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->
+  <string name="sports_widget_bronze_final">ᱠᱟᱸᱥᱟ ᱯᱷᱟᱭᱱᱟᱞ</string>
+  <!-- Sports widget error card message shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed" tools:ignore="UnusedResources">ᱠᱷᱮᱞ ᱵᱟᱯᱟᱰᱟᱭ ᱫᱚ ᱱᱤᱛᱚᱜ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾ ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱴᱤᱯᱤᱡ ᱛᱟᱭᱚᱢ ᱨᱤᱯᱷᱨᱮᱥᱤᱝ ᱨᱮᱭᱟᱜ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ ᱾</string>
+  <!-- Sports widget error card message shown when the network connection is interrupted and live updates pause. -->
+  <string name="sports_widget_error_connection_interrupted" tools:ignore="UnusedResources">ᱡᱚᱯᱲᱟᱣ ᱛᱟᱲᱟᱜ ᱮᱱᱟ — ᱞᱟᱭᱤᱵᱽ ᱦᱟᱹᱞᱤᱭᱟᱹᱠ ᱠᱚ ᱵᱚᱸᱫ ᱮᱱᱟ ᱾</string>
+  <!-- Sports widget action label to refresh match data after an error. -->
+  <string name="sports_widget_error_refresh">ᱱᱟᱶᱟ ᱟᱹᱨᱩ</string>
+  <!-- Sports widget group stage label for group A in the soccer tournament. -->
+  <string name="sports_widget_group_a">ᱫᱳᱞ A</string>
+  <!-- Sports widget group stage label for group B in the soccer tournament. -->
+  <string name="sports_widget_group_b">ᱫᱳᱞ B</string>
+  <!-- Sports widget group stage label for group C in the soccer tournament. -->
+  <string name="sports_widget_group_c">ᱫᱳᱞ C</string>
+  <!-- Sports widget group stage label for group D in the soccer tournament. -->
+  <string name="sports_widget_group_d">ᱫᱳᱞ D</string>
+  <!-- Sports widget group stage label for group E in the soccer tournament. -->
+  <string name="sports_widget_group_e">ᱫᱳᱞ E</string>
+  <!-- Sports widget group stage label for group F in the soccer tournament. -->
+  <string name="sports_widget_group_f">ᱫᱳᱞ F</string>
+  <!-- Sports widget group stage label for group G in the soccer tournament. -->
+  <string name="sports_widget_group_g">ᱫᱳᱞ G</string>
+  <!-- Sports widget group stage label for group H in the soccer tournament. -->
+  <string name="sports_widget_group_h">ᱫᱳᱞ H</string>
+  <!-- Sports widget group stage label for group I in the soccer tournament. -->
+  <string name="sports_widget_group_i">ᱫᱳᱞ I</string>
+  <!-- Sports widget group stage label for group J in the soccer tournament. -->
+  <string name="sports_widget_group_j">ᱫᱳᱞ J</string>
+  <!-- Sports widget group stage label for group K in the soccer tournament. -->
+  <string name="sports_widget_group_k">ᱫᱳᱞ K</string>
+  <!-- Sports widget group stage label for group L in the soccer tournament. -->
+  <string name="sports_widget_group_l">ᱫᱳᱞ L</string>
+  <!-- Sports widget button label to see match results. -->
+  <string name="sports_widget_see_results" tools:ignore="UnusedResources">ᱛᱮᱞᱟᱠᱚ ᱧᱮᱞ ᱢᱮ</string>
+  <!-- Sports widget button label to view details of a soccer match results. -->
+  <string name="sports_widget_view_match_details" tools:ignore="UnusedResources">ᱢᱮᱲᱟᱣ ᱠᱟᱱ ᱵᱤᱵᱨᱚᱬ ᱫᱮᱠᱷᱟᱣ ᱢᱮ</string>
+  <!-- Sports widget section header for related soccer matches in the same group. -->
+  <string name="sports_widget_related_matches" tools:ignore="UnusedResources">ᱡᱚᱲᱟᱣ ᱢᱮᱲᱟᱣ ᱠᱚ</string>
+  <!-- Sports widget section header for a list of upcoming soccer matches that have not yet started. -->
+  <string name="sports_widget_upcoming" tools:ignore="UnusedResources">ᱦᱟᱹᱡᱩᱜ ᱠᱟᱱ</string>
+  <!-- Sports widget match status suffix appended to match scores (e.g., "3 - 2 (Full time)") to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_suffix">(ᱯᱩᱨᱟᱹ ᱚᱠᱛᱚ)</string>
+  <!-- Sports widget match status to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_2">ᱯᱩᱨᱟᱹ ᱚᱠᱛᱚ</string>
+  <!--
+    Sports widget card title encouraging the user to follow the soccer tournament. “Keep tabs on” is an informal expression
+    meaning to stay updated on or regularly follow something (in this case, World Cup matches and updates).
+    It’s playfully related to Firefox in that “tabs” are a browser feature.
+    It suggests ongoing awareness rather than active monitoring or control. Not to be translated literally as physical “tabs”
+    or tracking in a technical sense; the meaning is about staying informed.
+  -->
+  <string name="sports_widget_card_title">ᱣᱟᱨᱞᱰ ᱠᱟᱯ ᱨᱮ ᱴᱮᱵᱽ ᱫᱚᱦᱚ ᱠᱟᱜ ᱢᱮ</string>
+  <!-- Sports widget card description shown below the title on the homepage entry point. -->
+  <string name="sports_widget_card_description">ᱞᱟᱭᱤᱵᱽ ᱢᱮᱪ ᱟᱯᱰᱮᱴ ᱟᱨ ᱟᱭᱢᱟ ᱧᱟᱢ ᱢᱮ ᱾</string>
+  <!-- Sports widget menu item to change the selected team. -->
+  <string name="sports_widget_change_team">ᱫᱚᱞ ᱵᱚᱫᱚᱞ ᱢᱮ</string>
+  <!-- Sports widget menu item to get a custom wallpaper for the widget. -->
+  <string name="sports_widget_get_custom_wallpaper">ᱠᱟᱥᱴᱚᱢ ᱣᱟᱞᱯᱮᱯᱟᱨ ᱧᱟᱢ ᱢᱮ</string>
+  <!-- Sports widget menu item to remove the widget from the homepage. -->
+  <string name="sports_widget_remove">ᱚᱪᱚᱜᱽ ᱢᱮ</string>
+  <!-- Sports widget card title shown after a team is eliminated, asking if the user still wants to continue following the soccer tournament. -->
+  <string name="sports_widget_still_want_to_follow">ᱱᱤᱛ ᱦᱚᱸ ᱥᱟᱶ ᱯᱟᱧᱡᱟ ᱥᱟᱱᱟᱭᱮᱫ ᱢᱮᱭᱟ ?</string>
+  <!-- Sports widget card description shown after a team is eliminated, suggesting to choose another team. -->
+  <string name="sports_widget_choose_another_team">ᱣᱟᱨᱞᱰ ᱠᱟᱯ ᱥᱟᱶ ᱛᱟᱦᱮᱱ ᱞᱟᱹᱜᱤᱫ ᱮᱴᱟᱜ ᱴᱤᱢ ᱵᱟᱪᱷᱟᱣ ᱢᱮ ᱾</string>
+  <!-- Sports widget button label to follow another team after the current team is eliminated. -->
+  <string name="sports_widget_follow_another_team">ᱮᱴᱟᱜ ᱫᱚᱞ ᱯᱟᱧᱡᱟᱭ ᱢᱮ</string>
+  <!-- Sports widget card title shown before the soccer tournament begins on top of a timer that is counting down. -->
+  <string name="sports_widget_countdown_to_world_cup">ᱡᱮᱜᱮᱫ ᱠᱚᱯ ᱨᱮᱭᱟᱜ ᱞᱮᱠᱷᱟ ᱦᱤᱥᱟᱹᱵ</string>
+  <!-- Sports widget button label that navigates the user to the full soccer tournament match schedule. -->
+  <string name="sports_widget_view_schedule">ᱥᱮᱰᱭᱩᱞ ᱧᱮᱞ ᱢᱮ</string>
+  <!-- Sports widget button label that dismisses the step of choosing a team to follow. -->
+  <string name="sports_widget_skip">ᱟᱲᱟᱜ</string>
+  <!-- Sports widget match status label shown during halftime of a match. -->
+  <string name="sports_widget_halftime" tools:ignore="UnusedResources">ᱛᱟᱞᱟᱚᱠᱛᱚ</string>
+  <!-- Sports widget match status label shown during extra time of a match. -->
+  <string name="sports_widget_extra_time">ᱵᱟᱹᱲᱛᱤ ᱚᱠᱛᱚ</string>
+  <!-- Sports widget match status label shown during penalties of a match. -->
+  <string name="sports_widget_penalties">ᱯᱮᱱᱟᱞᱴᱤ</string>
+  <!--
+    Sports widget countdown label for days. D is short for Day. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. T for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_days">ᱫ</string>
+  <!--
+    Sports widget countdown pill abbreviated label for hours. H is short for Hour. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. S for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_hours">ᱴ</string>
+  <!--
+    Sports widget countdown pill abbreviated label for minutes. M is short for Minute. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that.
+    Your translation will be automatically truncated at 2 characters to avoid layout issues
+  -->
+  <string name="sports_widget_countdown_minutes">ᱴᱤ</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget team / country selector. -->
+  <string name="sports_widget_close_team_selection_sheet_content_description">ᱫᱚᱞ ᱵᱟᱪᱷᱟᱣ ᱥᱤᱴ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget card. -->
+  <string name="sports_widget_close_content_description">ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
+  <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
+  <string name="sports_widget_more_options_content_description">ᱰᱷᱮᱨ ᱮᱴᱟᱜᱟᱜ</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing the time remaining until the soccer tournament kickoff.
+    %1$d is the number of days, %2$d is the number of hours, and %3$d is the number of minutes.
+  -->
+  <string name="sports_widget_countdown_remaining_content_description">ᱛᱟᱲᱟᱢ ᱚᱠᱛᱚ ᱾ ᱢᱟᱦᱟᱸ: %1$d ᱾ ᱴᱟᱲᱟᱝ: %2$d ᱾ ᱴᱤᱯᱤᱡ: %3$d ᱾</string>
+  <!-- Content description (for accessibility, not displayed)  for the action that navigates to the World Cup website. -->
+  <string name="sports_widget_go_to_world_cup_site_content_description" tools:ignore="UnusedResources">ᱡᱮᱜᱮᱫ ᱠᱟᱯ ᱥᱟᱭᱤᱴ ᱨᱮ ᱥᱮᱱᱚᱜ ᱢᱮ</string>
+  <!--
+    Content description (for accessibility, not displayed)  announcing an upcoming soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is the match date, %4$s is the kickoff time.
+  -->
+  <string name="sports_widget_upcoming_match_content_description">ᱦᱤᱡᱩᱜ ᱠᱟᱱ: %1$s ᱵᱚᱱᱟᱢ %2$s, %3$s %4$s ᱴᱷᱮᱱ</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s ᱵᱚᱱᱟᱢ %2$s, %3$s</string>
+  <!--
+    Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
+    %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
+    or Final represented by sports_widget_final).
+  -->
+  <string name="sports_widget_live_game_content_description">%s, ᱞᱟᱭᱤᱵᱽ ᱠᱷᱮᱞ</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing a live score.
+    %1$s is the home team name, %2$d is the home team score, %3$s is the away team name, %4$d is the away team score,
+    and %5$s is the match elapsed time (e.g. 72 minutes).
+  -->
+  <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, ᱞᱟᱭᱤᱵ</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">ᱴᱤᱯᱤᱡ ᱨᱮ ᱯᱟᱨᱚᱢᱮᱱ ᱚᱠᱛᱚ: %1$s</string>
+  <!--
+    Content description (for accessibility, not displayed) for a paginated item.
+    %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
+    %2$d is the current page number, and %3$d is the total number of pages.
+  -->
+  <string name="sports_widget_page_position_content_description">%1$s, ᱥᱟᱦᱴᱟ %3$d ᱠᱷᱚᱱ %2$d</string>
+  <!--
+    Content description (for accessibility, not displayed) for a page within the World Cup final results carousel.
+    %1$d is the current page number, and %2$d is the total number of pages.
+  -->
+  <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">ᱡᱮᱜᱮᱫ ᱠᱟᱯ ᱢᱩᱪᱟᱹᱫ ᱛᱟᱞᱟ, ᱥᱟᱦᱴᱟ %2$d ᱠᱷᱚᱱ %1$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">ᱡᱮᱜᱮᱫ ᱠᱟᱯ ᱨᱮᱭᱟᱜ ᱢᱩᱪᱟᱹᱫ ᱛᱮᱞᱟ</string>
+  <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
+  <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">ᱚᱲᱟᱜ ᱠᱷᱚᱱ ᱡᱮᱜᱮᱫ ᱠᱚᱯ ᱚᱪᱚᱜᱽ ᱢᱮ</string>
+  <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
+  <string name="sports_widget_team_followed_title">ᱯᱟᱧᱡᱟ: %s</string>
+  <!-- Description shown on the sports widget immediately after the user has followed a team -->
+  <string name="sports_widget_team_followed_description">ᱴᱩᱱᱟᱢᱮᱱᱴ ᱥᱮᱴᱮᱨᱚᱜ ᱥᱟᱶ ᱥᱟᱶᱛᱮ ᱢᱮᱪ ᱵᱟᱯᱟᱰᱟᱭ ᱞᱟᱹᱜᱤᱫ ᱫᱚᱦᱲᱟ ᱧᱮᱞ ᱢᱮ ᱾</string>
+  <!-- Sports widget match status label shown during first half of a match. -->
+  <string name="sports_widget_first_half" tools:ignore="UnusedResources">ᱯᱩᱭᱞᱩ ᱟᱫᱷᱟ</string>
+  <!-- Sports widget match status label shown during second half of a match. -->
+  <string name="sports_widget_second_half" tools:ignore="UnusedResources">ᱫᱚᱥᱟᱨ ᱦᱟᱯ</string>
+  <!-- Sports widget error card title shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_title">ᱧᱮᱞᱚᱜ ᱠᱟᱱᱟ ᱟᱢ ᱚᱯᱷᱞᱟᱭᱤᱱ ᱢᱮᱱᱟᱢᱟ ᱾</string>
+  <!-- Sports widget error card description shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_description">ᱟᱢᱟᱜ ᱤᱱᱴᱚᱨᱱᱮᱴ ᱡᱩᱲᱟᱹᱣ ᱧᱮᱞ ᱢᱮ ᱟᱨ ᱫᱩᱦᱲᱟᱹ ᱪᱮᱥᱴᱟᱭ ᱢᱮ ᱾</string>
+  <!-- Sports widget general group stage label in the soccer tournament. -->
+  <string name="sports_widget_group_stage">ᱜᱟᱫᱮᱞ ᱥᱴᱮᱡᱽ</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">ᱠᱷᱮᱞ ᱵᱟᱯᱟᱰᱟᱭ ᱫᱚ ᱱᱤᱛᱚᱜ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱴᱤᱯᱤᱡ ᱛᱟᱭᱚᱢ ᱨᱤᱯᱷᱨᱮᱥᱤᱝ ᱨᱮᱭᱟᱜ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ ᱾</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">ᱫᱚᱞ ᱴᱷᱟᱹᱣᱠᱟᱹ ᱦᱩᱭᱩᱜᱼᱟ</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4035,4 +4697,82 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">ᱫᱟᱱᱟᱝ ᱧᱮᱛᱮᱞ</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">ᱵᱟᱹᱲᱛᱤ ᱵᱟᱰᱟᱭ ᱢᱮ</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Google Lens ᱠᱷᱚᱧᱡᱟ ᱮᱢᱪᱷᱚᱭ ᱢᱮ</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">ᱪᱤᱛᱟᱹᱨ ᱥᱟᱶ ᱥᱮᱸᱫᱽᱨᱟ ᱢᱮ</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Google Lens ᱨᱮ ᱵᱷᱮᱡᱟ ᱞᱟᱹᱜᱤᱫ ᱜᱮᱞᱮᱨᱤ ᱠᱷᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">ᱪᱤᱛᱟᱹᱨ ᱦᱟᱛᱟᱣ ᱢᱮ ᱟᱨ Google Lens ᱨᱮ ᱵᱷᱮᱡᱟᱭ ᱢᱮ</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Google Lens ᱥᱟᱶ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">ᱟᱹᱭᱫᱟᱹᱨ ᱵᱟᱝ ᱦᱩᱭ ᱟᱠᱟᱱᱟ</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR ᱠᱳᱰ</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Google Lens ᱥᱮᱸᱫᱽᱨᱟ ᱪᱟᱹᱞᱩᱭ ᱢᱮ</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">ᱧᱮᱞᱚᱜ ᱥᱮᱸᱫᱽᱨᱟ ᱞᱟᱹᱜᱤᱫ Google ᱴᱷᱮᱱ ᱪᱤᱛᱟᱹᱨ ᱟᱨ ᱯᱷᱳᱴᱳ ᱵᱷᱮᱡᱟᱭ ᱢᱮ ᱾</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">ᱥᱩᱢᱩᱝ ᱧᱟᱢᱚᱜᱼᱟ ᱡᱚᱠᱷᱚᱱ Google ᱪᱮᱛᱟᱱ ᱨᱮ ᱪᱟᱹᱞᱩ ᱛᱟᱦᱮᱱᱟ ᱟᱨ ᱵᱽᱨᱟᱣᱩᱡᱽ ᱚᱠᱛᱮ ᱟᱢᱟᱜ ᱮᱠᱴᱤᱵᱷ ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ ᱛᱟᱦᱮᱱᱟ ᱾</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">ᱧᱮᱞᱚᱜ ᱥᱮᱸᱫᱽᱨᱟ ᱞᱟᱹᱜᱤᱫ Google ᱴᱷᱮᱱ ᱪᱤᱛᱟᱹᱨ ᱟᱨ ᱯᱷᱳᱴᱳ ᱵᱷᱮᱡᱟᱭ ᱢᱮ ᱾</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">QR ᱥᱠᱟᱱᱚᱨ</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">ᱪᱤᱛᱟᱹᱨ ᱨᱮ ᱪᱮᱫ QR ᱠᱳᱰ ᱵᱟᱝ ᱧᱟᱢ ᱟᱠᱟᱱᱟ</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">ᱟᱞᱮᱭᱟᱜ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴᱟᱞ ᱯᱷᱤᱪᱟᱨ ᱠᱚ ᱵᱤᱰᱟᱹᱣ ᱢᱮ!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">ᱩᱱᱠᱩ ᱫᱚ ᱩᱛᱱᱟᱹᱣ ᱟᱨ ᱩᱛᱱᱟᱹᱣ ᱨᱮ ᱢᱮᱱᱟᱜ ᱠᱚᱣᱟ ᱡᱟᱦᱟᱸ ᱫᱚ %s ᱪᱮᱫ ᱞᱮᱠᱟ ᱠᱟᱹᱢᱤᱭᱟ ᱚᱱᱟ ᱨᱮ ᱮᱥᱮᱨ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">ᱢᱚᱱᱚᱛ ᱦᱟᱹᱴᱤᱧ ᱢᱮ</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">%s ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱚᱛ ᱦᱟᱹᱴᱤᱧ ᱢᱮ᱾</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">ᱦᱩᱲᱟᱹᱜ ᱠᱚ ᱡᱚᱜᱟᱣ ᱫᱚᱦᱲᱟᱹ</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">ᱫᱚᱦᱚᱲᱟ ᱮᱛᱦᱚᱵ ᱢᱮ</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">ᱫᱚᱦᱲᱟ ᱮᱦᱚᱵ</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">ᱫᱚᱦᱚᱲᱟ ᱮᱛᱦᱚᱵ ᱢᱮ</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">ᱢᱩᱞ ᱛᱮ ᱨᱩᱣᱟᱹᱨ ᱞᱟᱹᱜᱤᱫ, ᱫᱚᱦᱲᱟ ᱪᱟᱹᱞᱩᱭ ᱢᱮ %s ᱾</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">ᱱᱚᱣᱟ ᱜᱩᱱ ᱪᱟᱹᱞᱩ ᱞᱟᱹᱜᱤᱫ, %s ᱫᱚᱦᱲᱟ ᱪᱟᱹᱞᱩᱭ ᱢᱮ ᱾</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">ᱱᱚᱣᱟ ᱜᱩᱱ ᱵᱚᱱᱫᱚ ᱞᱟᱹᱜᱤᱫ, %s ᱫᱚᱦᱲᱟ ᱪᱟᱹᱞᱩᱭ ᱢᱮ ᱾</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">ᱯᱷᱤᱪᱟᱨ ᱫᱚ ᱪᱮᱥᱴᱟ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ ᱾</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">ᱱᱤᱛᱚᱜ ᱫᱚ ᱪᱮᱥᱴᱟ ᱞᱟᱹᱜᱤᱫ ᱪᱮᱫ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴᱟᱞ ᱯᱷᱤᱪᱟᱨ ᱵᱟᱹᱱᱩᱜᱼᱟ</string>
 </resources>

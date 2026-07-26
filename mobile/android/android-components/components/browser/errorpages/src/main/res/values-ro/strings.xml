@@ -12,7 +12,7 @@
   <!-- The document title and heading of an error page shown when a website cannot be loaded for an unknown reason. -->
   <string name="mozac_browser_errorpages_generic_title">Cererea nu poate fi finalizată</string>
   <!-- The error message shown when a website cannot be loaded for an unknown reason. -->
-  <string name="mozac_browser_errorpages_generic_message"><![CDATA[<p>Momentan nu sunt disponibile informații suplimentare despre această problemă sau eroare.</p>]]></string>
+  <string name="mozac_browser_errorpages_generic_message"><![CDATA[<p>Nu sunt disponibile momentan informații suplimentare despre această problemă sau eroare.</p>]]></string>
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Conexiunea securizată a eșuat</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
@@ -48,7 +48,7 @@
   <!-- The error message shown when a website took long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>Site-ul solicitat nu a răspuns la o cerere de conectare, iar browserul a încetat să mai aștepte un răspuns.</p>\n<ul>\n<li>Este posibil ca serverul să fie suprasolicitat sau să aibă o întrerupere temporară? Încearcă din nou mai târziu.</li>\n<li>Ai probleme cu navigarea pe alte site-uri? Verifică conexiunea la rețea a dispozitivului.</li>\n<li>Dispozitivul sau rețeaua este protejat(ă) de un firewall sau proxy? Setările incorecte pot interfera cu navigarea pe web.</li>\n<li>Încă întâmpini probleme? Consultă-te cu administratorul de rețea sau furnizorul de servicii Internet pentru asistență.</li></ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_title">Conexiunea nu a reușit</string>
+  <string name="mozac_browser_errorpages_connection_failure_title">Conectare eșuată</string>
   <!-- The error message shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>Site-ul ar putea fi temporar indisponibil sau prea aglomerat. Încearcă din nou în câteva momente.</li>\n<li>Dacă nu reușești să încarci nicio pagină, verifică conexiunea la datele mobile sau la rețeaua Wi-Fi a dispozitivului.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -58,7 +58,7 @@
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">Pagina nu se redirecționează corect</string>
   <!-- The error message shown when the browser gets stuck in an infinite loop when loading a website. -->
-  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>Browserul a oprit încercarea de a recupera elementul solicitat. Site-ul redirecționează solicitarea într-un mod care nu se va finaliza niciodată. </p>\n<ul>\n<li>Ai dezactivat sau ai blocat cookie-urile solicitate de acest site?</li>\n<li>Dacă acceptarea cookie-urilor site-ului nu rezolvă problema, este probabil o problemă de configurare a serverului și nu a dispozitivului tău.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>Browserul a încetat să încerce să recupereze elementul solicitat. Site-ul redirecționează solicitarea într-un mod care nu va fi niciodată finalizat.</p>\n<ul>\n<li>Ai dezactivat sau ai blocat cookie-urile solicitate de acest site?</li>\n<li>Dacă acceptarea cookie-urilor site-ului nu rezolvă problema, este probabil o problemă de configurare a serverului și nu pe dispozitivul tău.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">Mod offline</string>
   <!-- The error message shown when a website cannot be loaded because the browser is in offline mode. -->

@@ -31,6 +31,8 @@
   <string name="history_search_hint">നാൾവഴി തിരയുക</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">അടയാളകുറിപ്പുകൾ തിരയുക</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">തിരിച്ചു ചെന്നിട്ടു തിരയലടയ്ക്കുക</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">ടാബുകൾ തിരയുക</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -559,10 +561,16 @@
   <string name="nova_onboarding_marketing_body_link_text">എങ്ങനെയാണു ഞങ്ങൾ ദത്തയെ ഉപയോഗിക്കുന്നതു്</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">കൂടുതല്‍ അറിയുക</string>
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">ഫയർഫോക്സിനെ പിന്തുണയ്ക്കുക</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">അതെ</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">സമ്മതിച്ചു തുടരുക</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">വേണ്ട, നന്ദി</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">ഇല്ല</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Firefox-ൽ സുരക്ഷിതമായി തുടരാൻ അറിയിപ്പുകൾ താങ്ങളെ സഹായിക്കുന്നു</string>
   <!-- Notifications onboarding button. -->
@@ -1339,6 +1347,8 @@
   <string name="add_tab">ടാബ് ചേര്‍ക്കുക</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">സ്വകാര്യ ടാബ് ചേർക്കുക</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">ടാബുകൂട്ടം ഉണ്ടാക്കുക</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">ടാബുകൾക്കായി തിരയുക</string>
   <!-- Text shown in the menu to view recently closed tabs -->
