@@ -28,7 +28,10 @@ widget:
     notification_emails:
       - mnakano.birchill@mozilla.com
     expires: never
+    lifetime: application
     telemetry_mirror: WIDGET_IME_NAME_ON_LINUX
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
 
   gtk_version:
     type: string
@@ -43,7 +46,10 @@ widget:
     notification_emails:
       - layout-telemetry-alerts@mozilla.com
     expires: never
+    lifetime: application
     telemetry_mirror: WIDGET_GTK_VERSION
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
 
   desktop_environment:
     type: string
@@ -58,3 +64,4 @@ widget:
     notification_emails:
       - drubino@mozilla.com
     expires: never
+    lifetime: application
