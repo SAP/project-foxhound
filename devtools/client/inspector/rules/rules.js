@@ -1565,25 +1565,19 @@ class CssRuleView extends EventEmitter {
 
     this.#containers.set(containerId, { header, container });
 
-    const isPseudo = containerId == PSEUDO_ELEMENTS_CONTAINER_ID;
     const { signal } = this.#abortController;
     toggleButton.addEventListener(
       "click",
-      this.#toggleContainerVisibility.bind(
-        this,
-        containerId,
-        isPseudo,
-        !this.showPseudoElements
-      ),
+      this.#toggleContainerVisibility.bind(this, containerId),
       { signal }
     );
 
-    if (isPseudo) {
-      this.#toggleContainerVisibility(
-        containerId,
-        isPseudo,
-        this.showPseudoElements
-      );
+    // All containers are expanded by default, but pseudo elements
+    // are only expanded if the related preference is true.
+    // So manually collapse the pseudo container if this pref is false.
+    const isPseudo = containerId == PSEUDO_ELEMENTS_CONTAINER_ID;
+    if (isPseudo && !this.showPseudoElements) {
+      this.#toggleContainerVisibility(containerId);
     }
 
     return { header, container };
@@ -1630,31 +1624,25 @@ class CssRuleView extends EventEmitter {
    *
    * @param  {string}  containerId
    *         Container ID.
-   * @param  {boolean}  isPseudo
-   *         Whether or not the container will hold pseudo element rules
-   * @param  {boolean}  showPseudo
-   *         Whether or not pseudo element rules should be displayed
    */
-  #toggleContainerVisibility(containerId, isPseudo, showPseudo) {
+  #toggleContainerVisibility(containerId) {
     const { header, container } = this.#containers.get(containerId);
     const toggleButton = header.querySelector("button");
-    let isOpen = toggleButton.getAttribute("aria-expanded") === "true";
+    const shouldExpand = toggleButton.getAttribute("aria-expanded") !== "true";
 
+    // Memoize the state in the pref for pseudo elements
+    const isPseudo = containerId == PSEUDO_ELEMENTS_CONTAINER_ID;
     if (isPseudo) {
-      this.#showPseudoElements = !!showPseudo;
-
+      this.#showPseudoElements = shouldExpand;
       Services.prefs.setBoolPref(
         "devtools.inspector.show_pseudo_elements",
-        this.showPseudoElements
+        this.#showPseudoElements
       );
-
-      container.hidden = !this.showPseudoElements;
-      isOpen = !this.showPseudoElements;
-    } else {
-      container.hidden = !container.hidden;
     }
 
-    toggleButton.setAttribute("aria-expanded", !isOpen);
+    container.hidden = !shouldExpand;
+
+    toggleButton.setAttribute("aria-expanded", shouldExpand);
   }
 
   /**
@@ -2590,7 +2578,7 @@ class CssRuleView extends EventEmitter {
       // Set the scroll behavior to "instant" to avoid timing issues between toggling
       // the pseudo element container and scrolling smoothly to the rule.
       scrollBehavior = "instant";
-      this.#toggleContainerVisibility(PSEUDO_ELEMENTS_CONTAINER_ID, true, true);
+      this.#toggleContainerVisibility(PSEUDO_ELEMENTS_CONTAINER_ID);
     }
 
     const textProp = matchingTextPropComputed.textProp;

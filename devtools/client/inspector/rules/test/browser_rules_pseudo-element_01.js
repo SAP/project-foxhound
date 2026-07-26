@@ -184,6 +184,11 @@ async function testTopRight(inspector, view) {
     !getPseudoElementContainer(view).hidden,
     "Pseudo Elements are shown again after clicking twisty"
   );
+  expander.click();
+  ok(
+    getPseudoElementContainer(view).hidden,
+    "Pseudo Elements are hidden again after re-clicking twisty"
+  );
 }
 
 async function testBottomRight(inspector, view) {
