@@ -29,8 +29,10 @@ class Screen final : public nsIScreen {
   Screen(LayoutDeviceIntRect aRect, LayoutDeviceIntRect aAvailRect,
          uint32_t aPixelDepth, uint32_t aColorDepth, uint32_t aRefreshRate,
          DesktopToLayoutDeviceScale aContentsScale,
-         CSSToLayoutDeviceScale aDefaultCssScale, float aDpi, IsPseudoDisplay,
-         IsHDR, hal::ScreenOrientation = hal::ScreenOrientation::None,
+         CSSToLayoutDeviceScale aDefaultCssScale, float aDpi,
+         IsPseudoDisplay aIsPseudoDisplay, IsHDR aIsHDR,
+         float aSDRContentBrightness, float aHDRPeakBrightness,
+         hal::ScreenOrientation = hal::ScreenOrientation::None,
          OrientationAngle = 0);
   explicit Screen(const dom::ScreenDetails& aScreenDetails);
   Screen(const Screen& aOther);
@@ -60,6 +62,8 @@ class Screen final : public nsIScreen {
   CSSToLayoutDeviceScale GetCSSToLayoutDeviceScale(IncludeOSZoom) const;
 
   bool GetIsHDR() const { return mIsHDR; }
+  float GetSDRContentBrightness() const { return mSDRContentBrightness; }
+  float GetHDRPeakBrightness() const { return mHDRPeakBrightness; }
 
  private:
   virtual ~Screen() = default;
@@ -78,6 +82,8 @@ class Screen final : public nsIScreen {
   const OrientationAngle mOrientationAngle;
   const bool mIsPseudoDisplay;
   const bool mIsHDR;
+  const float mSDRContentBrightness;
+  const float mHDRPeakBrightness;
 };
 
 }  // namespace widget

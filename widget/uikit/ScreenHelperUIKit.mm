@@ -54,10 +54,21 @@ static already_AddRefed<Screen> MakeScreen(UIScreen* aScreen) {
            dpi));
 
   NSInteger fps = [aScreen maximumFramesPerSecond];
-  auto screen =
-      MakeRefPtr<Screen>(rect, rect, pixelDepth, pixelDepth, fps,
-                         contentsScaleFactor, defaultCssScaleFactor, dpi,
-                         Screen::IsPseudoDisplay::No, Screen::IsHDR::No);
+  // UIKit doesn't give us real luminance values in cd/m^2, so we use relative
+  // values and pretend the SDR content brightness is 100 which is mentioned in
+  // Apple docs as typical.
+  float displayHDRHeadroom = 1.0f;
+  if (@available(iOS 16.0, *)) {
+    displayHDRHeadroom = [aScreen potentialEDRHeadroom];
+  }
+  float sdrContentBrightness = 100.0f;
+  float hdrPeakBrightness = displayHDRHeadroom * sdrContentBrightness;
+  bool isHDR = displayHDRHeadroom > 1.0f;
+  auto screen = MakeRefPtr<Screen>(
+      rect, rect, pixelDepth, pixelDepth, fps, contentsScaleFactor,
+      defaultCssScaleFactor, dpi, Screen::IsPseudoDisplay::No,
+      isHDR ? Screen::IsHDR::Yes : Screen::IsHDR::No, sdrContentBrightness,
+      hdrPeakBrightness);
   return screen.forget();
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);

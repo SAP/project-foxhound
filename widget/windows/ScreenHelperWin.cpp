@@ -7,6 +7,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/ToString.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/DisplayConfigWindows.h"
 #include "nsTArray.h"
 #include "WinUtils.h"
 
@@ -78,6 +79,7 @@ static void GetDisplayInfo(const char16ptr_t aName,
 
 struct CollectMonitorsParam {
   nsTArray<RefPtr<Screen>> screens;
+  std::optional<gfx::DisplayConfig> displayConfig;
 };
 
 BOOL CALLBACK CollectMonitors(HMONITOR aMon, HDC, LPRECT, LPARAM ioParam) {
@@ -127,16 +129,56 @@ BOOL CALLBACK CollectMonitors(HMONITOR aMon, HDC, LPRECT, LPARAM ioParam) {
 
   auto* manager = gfx::DeviceManagerDx::Get();
   bool isHDR = manager ? manager->MonitorHDREnabled(aMon) : false;
+  float sdrContentBrightness = 80.0f;
+  float hdrPeakBrightness = 80.0f;
+  if (manager && isHDR) {
+    auto hdrMetadata = manager->MonitorHDRMetadata(aMon);
+    if (hdrMetadata.isSome()) {
+      // Effectively this is the brightest single pixel value that won't be
+      // clamped, but may be scaled down by automatic brightness limiting.
+      hdrPeakBrightness = hdrMetadata->MaxContentLightLevel;
+    }
+  }
+
+  // Query SDR white level
+  if (cmParam->displayConfig) {
+    for (auto& path : cmParam->displayConfig->mPaths) {
+      DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {
+          .header = {.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+                     .size = sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME),
+                     .adapterId = path.sourceInfo.adapterId,
+                     .id = path.sourceInfo.id}};
+      if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS) {
+        continue;
+      }
+      if (wcscmp(info.szDevice, sourceName.viewGdiDeviceName) != 0) {
+        continue;
+      }
+      DISPLAYCONFIG_SDR_WHITE_LEVEL sdrWhiteLevel = {
+          .header = {.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL,
+                     .size = sizeof(DISPLAYCONFIG_SDR_WHITE_LEVEL),
+                     .adapterId = path.targetInfo.adapterId,
+                     .id = path.targetInfo.id}};
+      if (DisplayConfigGetDeviceInfo(&sdrWhiteLevel.header) == ERROR_SUCCESS) {
+        // sdrWhiteLevel.SDRWhiteLevel is fixed point relative to 80 nits at a
+        // multiplier of 1000
+        sdrContentBrightness = sdrWhiteLevel.SDRWhiteLevel * 80.0 / 1000.0;
+        break;
+      }
+    }
+  }
 
   MOZ_LOG(sScreenLog, LogLevel::Debug,
-          ("New screen [%s (%s) %d %u %f %f %f %d %d %d]",
+          ("New screen [%s (%s) %d %u %f %f %f %d %.0f/%.0f %d %d]",
            ToString(rect).c_str(), ToString(availRect).c_str(), pixelDepth,
            refreshRate, contentsScaleFactor.scale, defaultCssScaleFactor.scale,
-           dpi, isPseudoDisplay, uint32_t(orientation), angle));
+           dpi, isPseudoDisplay, sdrContentBrightness, hdrPeakBrightness,
+           uint32_t(orientation), angle));
   auto screen = MakeRefPtr<Screen>(
       rect, availRect, pixelDepth, pixelDepth, refreshRate, contentsScaleFactor,
       defaultCssScaleFactor, dpi, Screen::IsPseudoDisplay(isPseudoDisplay),
-      Screen::IsHDR(isHDR), orientation, angle);
+      Screen::IsHDR(isHDR), sdrContentBrightness, hdrPeakBrightness,
+      orientation, angle);
   if (info.dwFlags & MONITORINFOF_PRIMARY) {
     // The primary monitor must be the first element of the screen list.
     cmParam->screens.InsertElementAt(0, std::move(screen));
@@ -155,7 +197,7 @@ void ScreenHelperWin::RefreshScreens() {
     manager->UpdateMonitorInfo();
   }
 
-  CollectMonitorsParam cmParam;
+  CollectMonitorsParam cmParam = {{}, gfx::GetDisplayConfig()};
   BOOL result = ::EnumDisplayMonitors(
       nullptr, nullptr, (MONITORENUMPROC)CollectMonitors, (LPARAM)&cmParam);
   if (!result) {

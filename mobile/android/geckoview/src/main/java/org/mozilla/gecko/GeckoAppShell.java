@@ -50,6 +50,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.ContextThemeWrapper;
 import android.view.Display;
+import android.view.Display.HdrCapabilities;
 import android.view.InputDevice;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -931,6 +932,35 @@ public class GeckoAppShell {
   private static boolean hasHDRScreen() {
     final Display display = sScreenCompat.getDisplay(sDisplayId);
     return display != null && display.isHdr();
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static float getSDRContentBrightness() {
+    // We need API level 34 (Android 14) for getHdrCapabilities and thus
+    // getHdrSdrRatio.
+    if (Build.VERSION.SDK_INT < 34) {
+      return 80.0f;
+    }
+    final Display display = sScreenCompat.getDisplay(sDisplayId);
+    if (display != null) {
+      final HdrCapabilities hdrCapabilities = display.getHdrCapabilities();
+      if (hdrCapabilities != null) {
+        return hdrCapabilities.getDesiredMaxLuminance() / display.getHdrSdrRatio();
+      }
+    }
+    return 80.0f;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static float getHDRPeakBrightness() {
+    final Display display = sScreenCompat.getDisplay(sDisplayId);
+    if (display != null) {
+      final HdrCapabilities hdrCapabilities = display.getHdrCapabilities();
+      if (hdrCapabilities != null) {
+        return hdrCapabilities.getDesiredMaxLuminance();
+      }
+    }
+    return 80.0f;
   }
 
   private static Vibrator vibrator() {

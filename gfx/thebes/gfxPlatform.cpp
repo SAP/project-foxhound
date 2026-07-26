@@ -3852,13 +3852,24 @@ void gfxPlatform::GetDisplayInfo(mozilla::widget::InfoObject& aObj) {
   size_t i = 0;
   for (auto& screen : screens) {
     const LayoutDeviceIntRect rect = screen->GetRect();
-    nsPrintfCString value(
-        "%dx%d@%dHz scales:%f|%f %s", rect.width, rect.height,
-        screen->GetRefreshRate(), screen->GetContentsScaleFactor(),
-        screen->GetDefaultCSSScaleFactor(), screen->GetIsHDR() ? "HDR" : "SDR");
+    if (screen->GetIsHDR()) {
+      nsPrintfCString value(
+          "%dx%d@%dHz scales:%f|%f HDR %.0f/%.0f nits", rect.width, rect.height,
+          screen->GetRefreshRate(), screen->GetContentsScaleFactor(),
+          screen->GetDefaultCSSScaleFactor(), screen->GetSDRContentBrightness(),
+          screen->GetHDRPeakBrightness());
 
-    aObj.DefineProperty(nsPrintfCString("Display%zu", i++).get(),
-                        NS_ConvertUTF8toUTF16(value));
+      aObj.DefineProperty(nsPrintfCString("Display%zu", i++).get(),
+                          NS_ConvertUTF8toUTF16(value));
+    } else {
+      nsPrintfCString value("%dx%d@%dHz scales:%f|%f SDR", rect.width,
+                            rect.height, screen->GetRefreshRate(),
+                            screen->GetContentsScaleFactor(),
+                            screen->GetDefaultCSSScaleFactor());
+
+      aObj.DefineProperty(nsPrintfCString("Display%zu", i++).get(),
+                          NS_ConvertUTF8toUTF16(value));
+    }
   }
 
   // Platform display info is only currently used for about:support and getting
