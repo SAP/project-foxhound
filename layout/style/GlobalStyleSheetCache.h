@@ -8,7 +8,6 @@
 #include "mozilla/BuiltInStyleSheets.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
@@ -25,9 +24,7 @@ struct StyleLockedCssRules;
 
 namespace css {
 class Loader;
-// Enum defining how error should be handled.
-enum FailureAction { eCrash = 0, eLogToConsole };
-
+enum class FailureAction : uint8_t;
 }  // namespace css
 
 class GlobalStyleSheetCache final : public nsIObserver,
@@ -39,14 +36,14 @@ class GlobalStyleSheetCache final : public nsIObserver,
 
   static GlobalStyleSheetCache* Singleton();
 
-#define STYLE_SHEET(identifier_, url_, flags_)           \
-  NotNull<StyleSheet*> identifier_##Sheet() {            \
-    return BuiltInSheet(BuiltInStyleSheet::identifier_); \
+#define STYLE_SHEET(identifier_, url_, flags_)              \
+  StyleSheet* Get##identifier_##Sheet() {                   \
+    return GetBuiltInSheet(BuiltInStyleSheet::identifier_); \
   }
 #include "mozilla/BuiltInStyleSheetList.inc"
 #undef STYLE_SHEET
 
-  NotNull<StyleSheet*> BuiltInSheet(BuiltInStyleSheet);
+  StyleSheet* GetBuiltInSheet(BuiltInStyleSheet);
 
   StyleSheet* GetUserContentSheet();
   StyleSheet* GetUserChromeSheet();
@@ -97,11 +94,11 @@ class GlobalStyleSheetCache final : public nsIObserver,
   void InitFromProfile();
   void InitSharedSheetsInParent();
   void InitMemoryReporter();
+
   RefPtr<StyleSheet> LoadSheetURL(const nsACString& aURL, StyleOrigin,
-                                  css::FailureAction aFailureAction);
+                                  css::FailureAction);
   RefPtr<StyleSheet> LoadSheetFile(nsIFile* aFile, StyleOrigin);
-  RefPtr<StyleSheet> LoadSheet(nsIURI* aURI, StyleOrigin,
-                               css::FailureAction aFailureAction);
+  RefPtr<StyleSheet> LoadSheet(nsIURI* aURI, StyleOrigin, css::FailureAction);
   void LoadSheetFromSharedMemory(const nsACString& aURL,
                                  RefPtr<StyleSheet>* aSheet, StyleOrigin,
                                  const Header*, BuiltInStyleSheet);

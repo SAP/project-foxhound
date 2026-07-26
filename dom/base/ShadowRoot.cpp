@@ -582,8 +582,10 @@ void ShadowRoot::AppendBuiltInStyleSheet(BuiltInStyleSheet aSheet) {
   // NOTE(emilio): It's important to Clone() the stylesheet to avoid leaking,
   // since the built-in sheet is kept alive forever, and AppendStyleSheet will
   // set the associated global of the stylesheet.
-  RefPtr sheet = cache->BuiltInSheet(aSheet)->Clone(nullptr, nullptr);
-  AppendStyleSheet(*sheet);
+  if (auto* builtin = cache->GetBuiltInSheet(aSheet)) [[likely]] {
+    RefPtr sheet = builtin->Clone(nullptr, nullptr);
+    AppendStyleSheet(*sheet);
+  }
 }
 
 void ShadowRoot::RemoveSheetFromStyles(StyleSheet& aSheet) {

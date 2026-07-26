@@ -31,6 +31,20 @@
 
 namespace mozilla {
 
+namespace css {
+
+enum class FailureAction : uint8_t {
+  // NOTE(emilio): We crash only on nightly because of updater bugs
+  // (bug 1681745, bug 1941972) which have caused already a couple incidents.
+  //
+  // Note that if we don't find a UA sheet, we're very likely to render content
+  // (potentially even the browser UI) wrong. But crashing during startup likely
+  // leaves that installation in a perma-broken state in practice, so...
+  CrashNightly,
+  LogToConsole,
+};
+}
+
 // The GlobalStyleSheetCache is responsible for sharing user agent style sheet
 // contents across processes using shared memory.  Here is a high level view of
 // how that works:
@@ -101,7 +115,7 @@ namespace mozilla {
 //   process falls back to parsing and allocating its own copy of the UA sheets.
 
 using namespace mozilla;
-using namespace css;
+using namespace mozilla::css;
 
 mozilla::ipc::ReadOnlySharedMemoryHandle& sSharedMemoryHandle() {
   static NeverDestroyed<mozilla::ipc::ReadOnlySharedMemoryHandle> handle;
@@ -137,8 +151,7 @@ static constexpr struct {
 #undef STYLE_SHEET
 };
 
-NotNull<StyleSheet*> GlobalStyleSheetCache::BuiltInSheet(
-    BuiltInStyleSheet aSheet) {
+StyleSheet* GlobalStyleSheetCache::GetBuiltInSheet(BuiltInStyleSheet aSheet) {
   auto& slot = mBuiltIns[aSheet];
   if (!slot) {
     const auto& info = kBuiltInSheetInfo[size_t(aSheet)];
@@ -147,9 +160,9 @@ NotNull<StyleSheet*> GlobalStyleSheetCache::BuiltInSheet(
                             : StyleOrigin::Author;
     MOZ_ASSERT(info.mFlags & BuiltInStyleSheetFlags::UA ||
                info.mFlags & BuiltInStyleSheetFlags::Author);
-    slot = LoadSheetURL(info.mURL, origin, eCrash);
+    slot = LoadSheetURL(info.mURL, origin, FailureAction::CrashNightly);
   }
-  return WrapNotNull(slot);
+  return slot;
 }
 
 StyleSheet* GlobalStyleSheetCache::GetUserContentSheet() {
@@ -234,13 +247,13 @@ GlobalStyleSheetCache::GlobalStyleSheetCache() {
 
   if (XRE_IsParentProcess()) {
     // We know we need xul.css for the UI, so load that now too:
-    XULSheet();
+    GetXULSheet();
   }
 
   if (gUserContentSheetURL) {
     MOZ_ASSERT(XRE_IsContentProcess(), "Only used in content processes.");
-    mUserContentSheet =
-        LoadSheet(gUserContentSheetURL, StyleOrigin::User, eLogToConsole);
+    mUserContentSheet = LoadSheet(gUserContentSheetURL, StyleOrigin::User,
+                                  FailureAction::LogToConsole);
     gUserContentSheetURL = nullptr;
   }
 
@@ -394,7 +407,11 @@ void GlobalStyleSheetCache::InitSharedSheetsInParent() {
     if (info.mFlags & BuiltInStyleSheetFlags::NotShared) {
       continue;
     }
-    StyleSheet* sheet = BuiltInSheet(kind);
+    StyleSheet* sheet = GetBuiltInSheet(kind);
+    if (!sheet) [[unlikely]] {
+      // Crash report annotation handled in GetBuiltInSheet.
+      return;
+    }
     URLExtraData::sShared[i] = sheet->URLData();
     header->mSheets[i] = sheet->ToShared(builder.get(), message);
     if (!header->mSheets[i]) {
@@ -507,29 +524,30 @@ RefPtr<StyleSheet> GlobalStyleSheetCache::LoadSheetFile(nsIFile* aFile,
 
   nsCOMPtr<nsIURI> uri;
   NS_NewFileURI(getter_AddRefs(uri), aFile);
-  return LoadSheet(uri, aOrigin, eLogToConsole);
+  return LoadSheet(uri, aOrigin, FailureAction::LogToConsole);
 }
 
 static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
                               FailureAction aFailureAction) {
   nsPrintfCString errorMessage("%s loading built-in stylesheet '%s'", aMsg,
                                aURI ? aURI->GetSpecOrDefault().get() : "");
-  if (aFailureAction == eLogToConsole) {
-    nsCOMPtr<nsIConsoleService> cs =
-        do_GetService(NS_CONSOLESERVICE_CONTRACTID);
-    if (cs) {
-      cs->LogStringMessage(NS_ConvertUTF8toUTF16(errorMessage).get());
-      return;
-    }
+  if (aFailureAction == FailureAction::CrashNightly) {
+#ifdef NIGHTLY_BUILD
+    MOZ_CRASH_UNSAFE(errorMessage.get());
+#else
+    CrashReporter::AppendAppNotesToCrashReport("\n"_ns + errorMessage);
+#endif
   }
-
-  MOZ_CRASH_UNSAFE(errorMessage.get());
+  if (nsCOMPtr<nsIConsoleService> cs =
+          do_GetService(NS_CONSOLESERVICE_CONTRACTID)) {
+    cs->LogStringMessage(NS_ConvertUTF8toUTF16(errorMessage).get());
+  }
 }
 
 RefPtr<StyleSheet> GlobalStyleSheetCache::LoadSheet(
     nsIURI* aURI, StyleOrigin aOrigin, FailureAction aFailureAction) {
   if (!aURI) {
-    ErrorLoadingSheet(aURI, "null URI", eCrash);
+    ErrorLoadingSheet(aURI, "null URI", FailureAction::CrashNightly);
     return nullptr;
   }
 
