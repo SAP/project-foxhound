@@ -4162,7 +4162,7 @@
   value: true
   mirror: always
 
-#if defined(MOZ_WIDGET_COCOA) || defined(MOZ_WIDGET_GTK)
+#if !defined(ANDROID)
 # Whether to use the platform API to "lock" the native pointer for pointer lock.
 - name: dom.pointer-lock.native-lock.enabled
   type: bool

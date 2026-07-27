@@ -123,3 +123,66 @@ TEST(NativePointerLock, SetLockMode)
   window->UnlockNativePointer();
   CheckNativePointerLockState(window, initialInputDeviceCount, Nothing());
 }
+
+static void CheckClipCursorState(nsWindow* aLockedWindow) {
+  RECT cursorRect;
+  GetClipCursor(&cursorRect);
+
+  // Cursor is not confined
+  if (!aLockedWindow) {
+    ASSERT_EQ(cursorRect.top, 0);
+    ASSERT_EQ(cursorRect.left, 0);
+    ASSERT_EQ(cursorRect.bottom, GetSystemMetrics(SM_CYSCREEN));
+    ASSERT_EQ(cursorRect.right, GetSystemMetrics(SM_CXSCREEN));
+    return;
+  }
+
+  static const int kRegionBorder = 5;
+  LayoutDeviceIntRect windowRect = aLockedWindow->GetClientBounds();
+  ASSERT_EQ(cursorRect.top, windowRect.y + kRegionBorder);
+  ASSERT_EQ(cursorRect.left, windowRect.x + kRegionBorder);
+  ASSERT_EQ(cursorRect.bottom, windowRect.YMost() - kRegionBorder);
+  ASSERT_EQ(cursorRect.right, windowRect.XMost() - kRegionBorder);
+  return;
+}
+
+TEST(NativePointerLock, ClipCursor)
+{
+  RefPtr<nsWindow> window = new nsWindow();
+  std::ignore = window->Create(nullptr, LayoutDeviceIntRect(10, 10, 100, 100),
+                               InitData());
+
+  // Check initial state
+  CheckClipCursorState(nullptr);
+
+  // Lock native pointer and check
+  window->LockNativePointer(NativePointerLockMode::Unadjusted);
+  CheckClipCursorState(window);
+
+  // Switch lock mode and check
+  window->SetNativePointerLockMode(NativePointerLockMode::Regular);
+  CheckClipCursorState(window);
+
+  // Locking native pointer from other window should not work.
+  RefPtr<nsWindow> otherWindow = new nsWindow();
+  std::ignore = otherWindow->Create(
+      nullptr, LayoutDeviceIntRect(20, 20, 200, 200), InitData());
+  otherWindow->LockNativePointer(NativePointerLockMode::Unadjusted);
+  CheckClipCursorState(window);
+
+  // Unlocking native pointer from other window should not work.
+  otherWindow->UnlockNativePointer();
+  CheckClipCursorState(window);
+
+  // Unlock native pointer and check
+  window->UnlockNativePointer();
+  CheckClipCursorState(nullptr);
+
+  // Now lock native pointer from other window should work.
+  otherWindow->LockNativePointer(NativePointerLockMode::Unadjusted);
+  CheckClipCursorState(otherWindow);
+
+  // Unlock native pointer from other window.
+  otherWindow->UnlockNativePointer();
+  CheckClipCursorState(nullptr);
+}

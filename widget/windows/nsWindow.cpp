@@ -335,6 +335,7 @@ InjectTouchInputPtr nsWindow::sInjectTouchFuncPtr;
 
 bool nsWindow::sIsNativePointLocked = false;
 bool nsWindow::sIsUsingRawInputForMouseMove = false;
+nsWindow* nsWindow::sNativePointLockedWindow = nullptr;
 
 static SystemTimeConverter<DWORD>& TimeConverter() {
   static SystemTimeConverter<DWORD> timeConverterSingleton;
@@ -6526,6 +6527,8 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
     // Send a gecko resize event
     OnResize(clientSize);
   }
+
+  MaybeUpdateNativeLockedRegion();
 }
 
 void nsWindow::OnWindowPosChanging(WINDOWPOS* info) {
@@ -6894,6 +6897,8 @@ void nsWindow::OnDestroy() {
   // Prevent the widget from sending additional events.
   mWidgetListener = nullptr;
   mAttachedWidgetListener = nullptr;
+
+  ReleaseNativeLockedRegion();
 
   DestroyDirectManipulation();
 
@@ -8678,15 +8683,20 @@ void nsWindow::LockNativePointer(NativePointerLockMode aNativePointerLockMode) {
   // sIsNativePointLocked.
   sIsNativePointLocked = true;
   SetNativePointerLockMode(aNativePointerLockMode);
+  SetNativeLockedRegion();
 }
 
 void nsWindow::UnlockNativePointer() {
   if (NS_WARN_IF(!IsNativePointerLocked())) {
     return;
   }
+  if (NS_WARN_IF(sNativePointLockedWindow != this)) {
+    return;
+  }
 
   // SetNativePointerLockMode() have to be called before resetting
   // sIsNativePointLocked.
+  ReleaseNativeLockedRegion();
   SetNativePointerLockMode(NativePointerLockMode::Regular);
   sIsNativePointLocked = false;
 }
@@ -8711,6 +8721,49 @@ void nsWindow::SetNativePointerLockMode(
   RegisterRawInputDevices(&device, 1, sizeof(device));
 
   sIsUsingRawInputForMouseMove = usingRawInput;
+}
+
+void nsWindow::MaybeUpdateNativeLockedRegion() {
+  if (sNativePointLockedWindow != this) {
+    return;
+  }
+
+  MOZ_ASSERT(StaticPrefs::dom_pointer_lock_native_lock_enabled());
+  MOZ_ASSERT(IsNativePointerLocked());
+
+  // When the mouse hits the edge of the window, it may become visible again
+  // and remain visible. To prevent this, we add a small border around the
+  // edge.
+  static constexpr int kRegionBorder = 5;
+  LayoutDeviceIntRect lockedRegionRect = GetClientBounds();
+  lockedRegionRect.Deflate(kRegionBorder, kRegionBorder);
+
+  RECT winRect = WinUtils::ToWinRect(lockedRegionRect);
+  ClipCursor(&winRect);
+}
+
+void nsWindow::SetNativeLockedRegion() {
+  if (!StaticPrefs::dom_pointer_lock_native_lock_enabled()) {
+    return;
+  }
+
+  MOZ_ASSERT(!sNativePointLockedWindow);
+  MOZ_ASSERT(IsNativePointerLocked());
+
+  sNativePointLockedWindow = this;
+  MaybeUpdateNativeLockedRegion();
+}
+
+void nsWindow::ReleaseNativeLockedRegion() {
+  if (sNativePointLockedWindow != this) {
+    return;
+  }
+
+  MOZ_ASSERT(StaticPrefs::dom_pointer_lock_native_lock_enabled());
+  MOZ_ASSERT(IsNativePointerLocked());
+
+  sNativePointLockedWindow = nullptr;
+  ClipCursor(nullptr);
 }
 
 #ifdef DEBUG
