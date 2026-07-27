@@ -16,6 +16,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/PointerEventHandler.h"
@@ -293,9 +294,6 @@ void PointerLockManager::Unlock(const char* aReason, Document* aDoc) {
   if (sLockedRemoteTarget) {
     MOZ_ASSERT(XRE_IsParentProcess());
     MOZ_ASSERT(!sIsLocked);
-    MOZ_POINTERLOCK_LOG(
-        "Unlock document 0x%p [sLockedRemoteTarget=0x%p, reason=%s]", aDoc,
-        sLockedRemoteTarget, aReason);
 
     if (aDoc) {
       CanonicalBrowsingContext* lockedBc =
@@ -306,8 +304,12 @@ void PointerLockManager::Unlock(const char* aReason, Document* aDoc) {
       }
     }
 
+    MOZ_POINTERLOCK_LOG(
+        "Unlock document 0x%p [sLockedRemoteTarget=0x%p, reason=%s]", aDoc,
+        sLockedRemoteTarget, aReason);
+
     (void)sLockedRemoteTarget->SendReleasePointerLock();
-    sLockedRemoteTarget = nullptr;
+    PointerLockManager::ReleaseLockedRemoteTarget(sLockedRemoteTarget);
     return;
   }
 
@@ -471,8 +473,11 @@ bool PointerLockManager::IsInLockContext(BrowsingContext* aContext) {
 
 /* static */
 void PointerLockManager::SetLockedRemoteTarget(BrowserParent* aBrowserParent,
+                                               const bool& aUnadjustedMovement,
                                                nsACString& aError) {
   MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aBrowserParent);
+
   if (sLockedRemoteTarget) {
     if (sLockedRemoteTarget != aBrowserParent) {
       aError = "PointerLockDeniedInUse"_ns;
@@ -486,9 +491,40 @@ void PointerLockManager::SetLockedRemoteTarget(BrowserParent* aBrowserParent,
     return;
   }
 
+  RefPtr<Element> element =
+      aBrowserParent->TopLevelBrowserParent()->GetOwnerElement();
+  if (NS_WARN_IF(!element)) {
+    aError = "PointerLockDeniedFailedToLock"_ns;
+    return;
+  }
+
+  nsPresContext* presContext = element->OwnerDoc()->GetPresContext();
+  if (NS_WARN_IF(!presContext)) {
+    aError = "PointerLockDeniedFailedToLock"_ns;
+    return;
+  }
+
+  nsIWidget* widget = nsContentUtils::WidgetForContent(element);
+  if (NS_WARN_IF(!widget)) {
+    aError = "PointerLockDeniedFailedToLock"_ns;
+    return;
+  }
+
   MOZ_POINTERLOCK_LOG("Set locked remote target to 0x%p", aBrowserParent);
   sLockedRemoteTarget = aBrowserParent;
   PointerEventHandler::ReleaseAllPointerCaptureRemoteTarget();
+  if (StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
+    // Capture pointer to the top level browser element, so that mouse event can
+    // be always retargeted to the content when pointer lock is active, even if
+    // the pointer is out of the content area.
+    // XXX Now that we also capture the pointer in the parent process for
+    // pointer lock, we could potentially rely on the captured content for
+    // cross-process event dispatching instead of tracking the locked remote
+    // target separately.
+    PresShell::SetCapturingContent(element, CaptureFlags::PointerLock);
+    EventStateManager::RequestLockPointer(widget, presContext,
+                                          aUnadjustedMovement);
+  }
 }
 
 /* static */
@@ -499,7 +535,22 @@ void PointerLockManager::ReleaseLockedRemoteTarget(
     MOZ_POINTERLOCK_LOG("Release locked remote target 0x%p",
                         sLockedRemoteTarget);
     sLockedRemoteTarget = nullptr;
+    PresShell::SetCapturingContent(nullptr, CaptureFlags::PointerLock);
+
+    nsCOMPtr<nsIWidget> widget = aBrowserParent->GetTopLevelWidget();
+    EventStateManager::ReleaseLockedPointer(widget);
   }
+}
+
+/* static */
+bool PointerLockManager::ShouldResetPointer() {
+  if (!StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
+    return IsLocked();
+  }
+
+  // If the pref is enabled, we should reset pointer position to center of the
+  // widget in parent process.
+  return XRE_IsParentProcess() && (GetLockedRemoteTarget() || IsLocked());
 }
 
 static nsIWidget* GetWidgetForDocument(Document* aDocument) {
@@ -597,6 +648,7 @@ PointerLockManager::PointerLockRequest::Run() {
     nsWeakPtr doc = do_GetWeakReference(element->OwnerDoc());
     nsWeakPtr bc = do_GetWeakReference(browserChild);
     browserChild->SendRequestPointerLock(
+        mUnadjustedMovement,
         [e, doc, bc, promise,
          unadjustedMovement = mUnadjustedMovement](const nsCString& aError) {
           nsCOMPtr<Document> document = do_QueryReferent(doc);

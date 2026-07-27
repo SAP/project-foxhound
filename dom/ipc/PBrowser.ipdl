@@ -570,7 +570,7 @@ parent:
     /**
      * Child informs the parent that a pointer lock has requested.
      */
-    async RequestPointerLock() returns (nsCString error);
+    async RequestPointerLock(bool aUnadjustedMovement) returns (nsCString error);
 
 both:
     /**

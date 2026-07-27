@@ -4179,6 +4179,13 @@
   value: true
   mirror: always
 
+# Whether the parent process should reset pointer when pointer lock is
+# requested.
+- name: dom.pointer-lock.reset-to-center-from-parent.enabled
+  type: bool
+  value: true
+  mirror: always
+
 # re-SAB: Whether to allow postMessage of a SharedArrayBuffer if various
 # preconditions related to COOP and COEP are met
 - name: dom.postMessage.sharedArrayBuffer.withCOOP_COEP

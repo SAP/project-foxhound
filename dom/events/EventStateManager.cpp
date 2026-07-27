@@ -1240,9 +1240,7 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       UpdateCursor(aPresContext, mouseEvent, mCurrentTarget, aStatus);
 
       UpdateLastRefPointOfMouseEvent(mouseEvent);
-      if (PointerLockManager::IsLocked()) {
-        ResetPointerToWindowCenterWhilePointerLocked(mouseEvent);
-      }
+      ResetPointerToWindowCenterWhilePointerLocked(mouseEvent);
       UpdateLastPointerPosition(mouseEvent);
 
       GenerateMouseEnterExit(mouseEvent);
@@ -5712,20 +5710,21 @@ void EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
       targetWidget);
 }
 
-// Returns the center point of the window's client area. This is
-// in widget coordinates, i.e. relative to the widget's top-left
-// corner, not in screen coordinates, the same units that UIEvent::
-// refpoint is in. It may not be the exact center of the window if
-// the platform requires rounding the coordinate.
-static LayoutDeviceIntPoint GetWindowClientRectCenter(nsIWidget* aWidget) {
-  NS_ENSURE_TRUE(aWidget, LayoutDeviceIntPoint(0, 0));
+// Returns the size and also the center point of the window's client area. The
+// center point is in widget coordinates, i.e. relative to the widget's top-left
+// corner, not in screen coordinates, the same units that UIEvent:: refpoint is
+// in. It may not be the exact center of the window if the platform requires
+// rounding the coordinate.
+static std::pair<LayoutDeviceIntSize, LayoutDeviceIntPoint>
+GetWindowClientSizeAndCenterPoint(nsIWidget* aWidget) {
+  MOZ_ASSERT(aWidget);
 
-  LayoutDeviceIntRect rect = aWidget->GetClientBounds();
-  LayoutDeviceIntPoint point(rect.width / 2, rect.height / 2);
+  LayoutDeviceIntSize size = aWidget->GetClientSize();
+  LayoutDeviceIntPoint point(size.width / 2, size.height / 2);
   int32_t round = aWidget->RoundsWidgetCoordinatesTo();
   point.x = point.x / round * round;
   point.y = point.y / round * round;
-  return point;
+  return std::pair{size, point};
 }
 
 void EventStateManager::GeneratePointerEnterExit(EventMessage aMessage,
@@ -5752,7 +5751,12 @@ void EventStateManager::UpdateLastRefPointOfMouseEvent(
   // Mouse movement is reported on the MouseEvent.movement{X,Y} fields.
   // Movement is calculated in UIEvent::GetMovementPoint() as:
   //   previous_mousemove_mRefPoint - current_mousemove_mRefPoint.
-  if (PointerLockManager::IsLocked() && aMouseEvent->mWidget) {
+  //
+  // When the pref is enabled, not every mousemove event causes a synthetic
+  // re-centering event to be dispatched, so we should not forcibly set
+  // mLastRefPoint to the center point.
+  if (PointerLockManager::ShouldResetPointer() && aMouseEvent->mWidget &&
+      !StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
     // The pointer is locked. If the pointer is not located at the center of
     // the window, dispatch a synthetic mousemove to return the pointer there.
     // Doing this between "real" pointer moves gives the impression that the
@@ -5760,7 +5764,7 @@ void EventStateManager::UpdateLastRefPointOfMouseEvent(
     // boundary. We cancel the synthetic event so that we don't end up
     // dispatching the centering move event to content.
     aMouseEvent->mLastRefPoint =
-        GetWindowClientRectCenter(aMouseEvent->mWidget);
+        GetWindowClientSizeAndCenterPoint(aMouseEvent->mWidget).second;
 
   } else if (lastRefPoint == kInvalidRefPoint) {
     // We don't have a valid previous mousemove mRefPoint. This is either
@@ -5785,19 +5789,103 @@ void EventStateManager::UpdateLastRefPointOfMouseEvent(
 }
 
 /* static */
+void EventStateManager::RequestLockPointer(nsIWidget* aWidget,
+                                           nsPresContext* aPresContext,
+                                           bool aUnadjustedMovement) {
+  MOZ_ASSERT(aWidget);
+  MOZ_ASSERT(aPresContext);
+
+  if (!PointerLockManager::ShouldResetPointer()) {
+    return;
+  }
+
+  // When the dom.pointer-lock.reset-to-center-from-parent pref is enabled,
+  // resetting pointer should only happen in the parent process.
+  MOZ_ASSERT_IF(
+      StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled(),
+      XRE_IsParentProcess());
+  MOZ_ASSERT(sPreLockScreenPoint == kInvalidRefPoint);
+  MOZ_ASSERT(sSynthCenteringPoint == kInvalidRefPoint);
+
+  // Activate native pointer lock on platforms where it is required.
+  aWidget->LockNativePointer(aUnadjustedMovement
+                                 ? nsIWidget::NativePointerLockMode::Unadjusted
+                                 : nsIWidget::NativePointerLockMode::Regular);
+
+  // Store the last known ref point so we can reposition the pointer after
+  // unlock.
+  sPreLockScreenPoint = LayoutDeviceIntPoint::Round(
+      sLastScreenPoint * aPresContext->CSSToDevPixelScale());
+
+  // Fire a synthetic mouse move to ensure event state is updated. We first
+  // set the mouse to the center of the window, so that the mouse event
+  // doesn't report any movement.
+  sLastRefPoint = sLastRefPointOfRawUpdate =
+      GetWindowClientSizeAndCenterPoint(aWidget).second;
+
+  // Only do this when repositioning happens in the parent process, so we don't
+  // change the original behavior.
+  if (StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
+    sSynthCenteringPoint = sLastRefPoint;
+  }
+
+  aWidget->SynthesizeNativeMouseMove(
+      sLastRefPoint + aWidget->WidgetToScreenOffset(), nullptr);
+}
+
+/* static */
 void EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
     WidgetMouseEvent* aMouseEvent) {
-  MOZ_ASSERT(PointerLockManager::IsLocked());
+  MOZ_ASSERT(aMouseEvent);
+
+  if (!PointerLockManager::ShouldResetPointer()) {
+    return;
+  }
+
+  // When the dom.pointer-lock.reset-to-center-from-parent pref is enabled,
+  // pointer repositioning should be triggered from the parent process.
+  MOZ_ASSERT_IF(
+      StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled(),
+      XRE_IsParentProcess());
+
   if ((aMouseEvent->mMessage != ePointerRawUpdate &&
        aMouseEvent->mMessage != eMouseMove &&
        aMouseEvent->mMessage != ePointerMove) ||
-      !aMouseEvent->mWidget) {
+      !aMouseEvent->mWidget || !aMouseEvent->IsReal()) {
     return;
   }
 
   // We generate pointermove from mousemove event, so only synthesize native
   // mouse move and update sSynthCenteringPoint by mousemove event.
-  bool updateSynthCenteringPoint = aMouseEvent->mMessage == eMouseMove;
+  const bool updateSynthCenteringPoint = aMouseEvent->mMessage == eMouseMove;
+  const auto recenteringPoint = [&]() -> Maybe<LayoutDeviceIntPoint> {
+    if (!updateSynthCenteringPoint) {
+      return Nothing();
+    }
+
+    auto [size, center] =
+        GetWindowClientSizeAndCenterPoint(aMouseEvent->mWidget);
+    if (!StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
+      if (aMouseEvent->mRefPoint != center) {
+        return Some(center);
+      }
+      return Nothing();
+    }
+
+    // The pointer cannot be move outside the browser window boundary, as each
+    // platform now use a native API to "lock" the pointer Therefore, we do not
+    // need to reposition it to the center on every mousemove event. However, we
+    // still need to recenter it once it moves too close the the boundary;
+    // otherwise, the pointer may become stuck at the boundary and no longer be
+    // able to move in certain directions. The boundary buffer is currently
+    // 25% of the window size.
+    LayoutDeviceIntRect rect(size.Width() / 4, size.Height() / 4,
+                             size.Width() / 2, size.Height() / 2);
+    if (!rect.Contains(aMouseEvent->mRefPoint)) {
+      return Some(center);
+    }
+    return Nothing();
+  }();
 
   // The pointer is locked. If the pointer is not located at the center of
   // the window, dispatch a synthetic mousemove to return the pointer there.
@@ -5805,29 +5893,99 @@ void EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
   // (locked) pointer can continue moving and won't stop at the screen
   // boundary. We cancel the synthetic event so that we don't end up
   // dispatching the centering move event to content.
-  LayoutDeviceIntPoint center = GetWindowClientRectCenter(aMouseEvent->mWidget);
-
-  if (aMouseEvent->mRefPoint != center && updateSynthCenteringPoint) {
+  if (recenteringPoint) {
     // Mouse move doesn't finish at the center of the window. Dispatch a
     // synthetic native mouse event to move the pointer back to the center
     // of the window, to faciliate more movement. But first, record that
     // we've dispatched a synthetic mouse movement, so we can cancel it
     // in the other branch here.
-    sSynthCenteringPoint = center;
+    sSynthCenteringPoint = *recenteringPoint;
+
     // XXX Once we fix XXX comments in SetPointerLock about this API, we could
     //     restrict that this API works only in the automation mode or in the
     //     pointer locked situation.
     aMouseEvent->mWidget->SynthesizeNativeMouseMove(
-        center + aMouseEvent->mWidget->WidgetToScreenOffset(), nullptr);
-  } else if (aMouseEvent->mRefPoint == sSynthCenteringPoint) {
+        sSynthCenteringPoint + aMouseEvent->mWidget->WidgetToScreenOffset(),
+        nullptr);
+    return;
+  }
+
+  if (!StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
+    if (aMouseEvent->mRefPoint == sSynthCenteringPoint) {
+      // This is the "synthetic native" event we dispatched to re-center the
+      // pointer. Cancel it so we don't expose the centering move to content.
+      aMouseEvent->StopPropagation();
+      // Clear sSynthCenteringPoint so we don't cancel other events
+      // targeted at the center.
+      if (updateSynthCenteringPoint) {
+        sSynthCenteringPoint = kInvalidRefPoint;
+      }
+    }
+    return;
+  }
+
+  // The synthesized re-centering event might be coalesced with subsequent
+  // events at the OS level, so the event's ref point might not exactly match
+  // sSynthCenteringPoint here.
+  if (sSynthCenteringPoint != kInvalidRefPoint) {
+    // If the synthesized re-centering even is coalesced, we need to report the
+    // corresponding movement if the OS does not provide movement data. The
+    // synthesized re-centering event is also very important for content process
+    // to update its last ref point, so it should not be compressed or
+    // coalesced, setting movement data can also prevent it from being
+    // compressed or coalesced.
+    if (!aMouseEvent->mMovement) {
+      aMouseEvent->mMovement.emplace(aMouseEvent->mRefPoint -
+                                     sSynthCenteringPoint);
+    }
+
     // This is the "synthetic native" event we dispatched to re-center the
-    // pointer. Cancel it so we don't expose the centering move to content.
-    aMouseEvent->StopPropagation();
-    // Clear sSynthCenteringPoint so we don't cancel other events
-    // targeted at the center.
+    // pointer. We don't expose it to content. We also want to propagate this
+    // state to the content process, so we do not use `StopPropagation()`, since
+    // that state is reset for each event group.
+    if (*aMouseEvent->mMovement == LayoutDeviceIntPoint(0, 0)) {
+      aMouseEvent->mFlags.mOnlySystemGroupDispatch = true;
+    }
+
+    // Clear sSynthCenteringPoint so subsequent events are handled normally.
     if (updateSynthCenteringPoint) {
       sSynthCenteringPoint = kInvalidRefPoint;
     }
+  }
+}
+
+/* static */
+void EventStateManager::ReleaseLockedPointer(nsIWidget* aWidget) {
+  if (sPreLockScreenPoint == kInvalidRefPoint) {
+    MOZ_ASSERT(sSynthCenteringPoint == kInvalidRefPoint);
+    return;
+  }
+
+  // When the dom.pointer-lock.reset-to-center-from-parent pref is enabled,
+  // resetting pointer should only happen in the parent process.
+  MOZ_ASSERT_IF(
+      StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled(),
+      XRE_IsParentProcess());
+
+  // Reset sSynthCenteringPoint to invalid so that next time we start
+  // locking pointer, it has its initial value.
+  sSynthCenteringPoint = kInvalidRefPoint;
+
+  LayoutDeviceIntPoint preLockScreenPoint = sPreLockScreenPoint;
+  sPreLockScreenPoint = kInvalidRefPoint;
+
+  if (aWidget) {
+    // Deactivate native pointer lock on platforms where it is required
+    aWidget->UnlockNativePointer();
+
+    // Unlocking, so return pointer to the original position by firing a
+    // synthetic mouse event. We first reset sLastRefPoint and
+    // sLastRefPointOfRawUpdate to its pre-pointerlock position, so that the
+    // synthetic mouse event reports no movement.
+    sLastRefPoint = sLastRefPointOfRawUpdate =
+        preLockScreenPoint - aWidget->WidgetToScreenOffset();
+
+    aWidget->SynthesizeNativeMouseMove(preLockScreenPoint, nullptr);
   }
 }
 
@@ -5976,65 +6134,19 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
   if (PointerLockManager::IsLocked()) {
     MOZ_ASSERT(aWidget, "Locking pointer requires a widget");
     MOZ_ASSERT(aPresContext, "Locking pointer requires a presContext");
-    MOZ_ASSERT(sPreLockScreenPoint == kInvalidRefPoint);
 
     // Release all pointer capture when a pointer lock is successfully applied
     // on an element.
     PointerEventHandler::ReleaseAllPointerCapture();
-
-    // Store the last known ref point so we can reposition the pointer after
-    // unlock.
-    sPreLockScreenPoint = LayoutDeviceIntPoint::Round(
-        sLastScreenPoint * aPresContext->CSSToDevPixelScale());
-
-    // Fire a synthetic mouse move to ensure event state is updated. We first
-    // set the mouse to the center of the window, so that the mouse event
-    // doesn't report any movement.
-    // XXX Cannot we do synthesize the native mousemove in the parent process
-    //     with calling LockNativePointer below?  Then, we could make this API
-    //     work only in the automation mode.
-    sLastRefPoint = sLastRefPointOfRawUpdate =
-        GetWindowClientRectCenter(aWidget);
 
     // Suppress DnD
     if (dragService) {
       dragService->Suppress();
     }
 
-    // Activate native pointer lock on platforms where it is required.
-    aWidget->LockNativePointer(
-        aUnadjustedMovement ? nsIWidget::NativePointerLockMode::Unadjusted
-                            : nsIWidget::NativePointerLockMode::Regular);
-
-    // Initialize the pointer position after pointer is locked.
-    aWidget->SynthesizeNativeMouseMove(
-        sLastRefPoint + aWidget->WidgetToScreenOffset(), nullptr);
+    RequestLockPointer(aWidget, aPresContext, aUnadjustedMovement);
   } else {
-    if (aWidget) {
-      // Deactivate native pointer lock on platforms where it is required
-      aWidget->UnlockNativePointer();
-    }
-
-    // Reset SynthCenteringPoint to invalid so that next time we start
-    // locking pointer, it has its initial value.
-    sSynthCenteringPoint = kInvalidRefPoint;
-
-    LayoutDeviceIntPoint preLockScreenPoint = sPreLockScreenPoint;
-    sPreLockScreenPoint = kInvalidRefPoint;
-
-    if (aWidget) {
-      MOZ_ASSERT(preLockScreenPoint != kInvalidRefPoint);
-      // Unlocking, so return pointer to the original position by firing a
-      // synthetic mouse event. We first reset sLastRefPoint and
-      // sLastRefPointOfRawUpdate to its pre-pointerlock position, so that the
-      // synthetic mouse event reports no movement.
-      sLastRefPoint = sLastRefPointOfRawUpdate =
-          preLockScreenPoint - aWidget->WidgetToScreenOffset();
-      // XXX Cannot we do synthesize the native mousemove in the parent process
-      //     with calling `UnlockNativePointer` above?  Then, we could make this
-      //     API work only in the automation mode.
-      aWidget->SynthesizeNativeMouseMove(preLockScreenPoint, nullptr);
-    }
+    ReleaseLockedPointer(aWidget);
 
     // Unsuppress DnD
     if (dragService) {

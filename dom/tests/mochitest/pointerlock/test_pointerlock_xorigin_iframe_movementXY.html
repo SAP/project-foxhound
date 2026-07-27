@@ -77,12 +77,18 @@ add_task(async function test_small_xorigin_iframe() {
   let iframeCenterWidth = Math.round(iframe.getBoundingClientRect().width / 2);
   let iframeCenterHeight = Math.round(iframe.getBoundingClientRect().height / 2);
   // Click iframe to request pointer lock.
-  let promise = Promise.all([
+  let eventPromises = [
     waitForMessage("pointerlockchange"),
-    // We force the mouse to move to the center position when entering pointer
-    // lock, which results in an additional mousemove event, see bug 1254044.
-    waitAndTestMouseMoveMessage(0, 0),
-  ]);
+  ];
+  // We force the mouse to move to the center position when entering pointer
+  // lock, which results in an additional mousemove event, see bug 1254044.
+  // If the re-centering is from the parent process, there is no additional
+  // mousemove event, so we don't wait for it.
+  if (!SpecialPowers.getBoolPref("dom.pointer-lock.reset-to-center-from-parent.enabled")) {
+    eventPromises.push(waitAndTestMouseMoveMessage(0, 0));
+  }
+
+  let promise = Promise.all(eventPromises);
   synthesizeMouse(iframe, iframeCenterWidth, iframeCenterHeight, {});
   await promise;
 

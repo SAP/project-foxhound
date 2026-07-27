@@ -55,8 +55,13 @@ class PointerLockManager final {
   // Set/release pointer lock remote target. Should only be called in parent
   // process.
   static void SetLockedRemoteTarget(dom::BrowserParent* aBrowserParent,
+                                    const bool& aUnadjustedMovement,
                                     nsACString& aError);
   static void ReleaseLockedRemoteTarget(dom::BrowserParent* aBrowserParent);
+
+  // Returns true if the pointer position should be reset for pointer lock in
+  // this process.
+  static bool ShouldResetPointer();
 
  private:
   class PointerLockRequest final : public Runnable {
