@@ -15,42 +15,50 @@
   <video id='v2' muted></video><audio id='a2' muted></audio>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-    reflectBoolean({
-      element: document.createElement("video"),
-      attribute: { content: "muted", idl: "defaultMuted" },
+    add_setup(async function() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["dom.media.muted-state.enabled", true]],
+      });
     });
 
-    reflectBoolean({
-      element: document.createElement("audio"),
-      attribute: { content: "muted", idl: "defaultMuted" },
+    add_task(async function testDefaultMuted() {
+      reflectBoolean({
+        element: document.createElement("video"),
+        attribute: { content: "muted", idl: "defaultMuted" },
+      });
+
+      reflectBoolean({
+        element: document.createElement("audio"),
+        attribute: { content: "muted", idl: "defaultMuted" },
+      });
+
+      var v1 = document.getElementById('v1');
+      var a1 = document.getElementById('a1');
+      var v2 = document.getElementById('v2');
+      var a2 = document.getElementById('a2');
+
+      // Check that muted state correspond to the default value.
+      is(v1.muted, false, "v1.muted should be false by default");
+      is(a1.muted, false, "a1.muted should be false by default");
+      is(v2.muted, true, "v2.muted should be true by default");
+      is(a2.muted, true, "a2.muted should be true by default");
+
+      // While the muted setter has not been called, the muted state is "default"
+      // and the muted content attribute acts as a fallback, so changing
+      // defaultMuted (which reflects the content attribute) changes muted.
+      // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted
+      v1.defaultMuted = true;
+      a1.defaultMuted = true;
+      v2.defaultMuted = false;
+      a2.defaultMuted = false;
+
+      is(v1.muted, true, "v1.muted reflects the added muted content attribute");
+      is(a1.muted, true, "a1.muted reflects the added muted content attribute");
+      is(v2.muted, false, "v2.muted reflects the removed muted content attribute");
+      is(a2.muted, false, "a2.muted reflects the removed muted content attribute");
+
+      await new Promise(resolve => mediaTestCleanup(resolve));
     });
-
-    var v1 = document.getElementById('v1');
-    var a1 = document.getElementById('a1');
-    var v2 = document.getElementById('v2');
-    var a2 = document.getElementById('a2');
-
-    // Check that muted state correspond to the default value.
-    is(v1.muted, false, "v1.muted should be false by default");
-    is(a1.muted, false, "a1.muted should be false by default");
-    is(v2.muted, true, "v2.muted should be true by default");
-    is(a2.muted, true, "a2.muted should be true by default");
-
-    // While the muted setter has not been called, the muted state is "default"
-    // and the muted content attribute acts as a fallback, so changing
-    // defaultMuted (which reflects the content attribute) changes muted.
-    // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted
-    v1.defaultMuted = true;
-    a1.defaultMuted = true;
-    v2.defaultMuted = false;
-    a2.defaultMuted = false;
-
-    is(v1.muted, true, "v1.muted reflects the added muted content attribute");
-    is(a1.muted, true, "a1.muted reflects the added muted content attribute");
-    is(v2.muted, false, "v2.muted reflects the removed muted content attribute");
-    is(a2.muted, false, "a2.muted reflects the removed muted content attribute");
-
-    mediaTestCleanup();
 </script>
 </pre>
 </body>
