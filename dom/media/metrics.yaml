@@ -453,6 +453,22 @@ media:
       - media-alerts@mozilla.com
     expires: 156
 
+  muted_by_content_attribute_runtime:
+    type: counter
+    description: >
+      How often a media element whose muted state is "default" is muted only by
+      a muted content attribute that was added at runtime, measured at playback
+      when the element would otherwise be audible (has an audio track, non-zero
+      volume, is playing, and is not otherwise muted). Recorded at most once per
+      resource, to measure how often pages rely on this pattern across channels.
+    bugs:
+      - https://bugzil.la/2053586
+    data_reviews:
+      - https://bugzil.la/2053586
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: 160
+
   video_hardware_decoding_support:
     type: labeled_boolean
     description: >

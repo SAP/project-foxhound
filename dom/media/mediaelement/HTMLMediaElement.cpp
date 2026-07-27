@@ -2518,6 +2518,9 @@ void HTMLMediaElement::AbortExistingLoads() {
   // Abort any already-running instance of the resource selection algorithm.
   mLoadWaitStatus = NOT_WAITING;
 
+  // A new resource is being loaded; allow its impact to be recorded again.
+  mRecordedRuntimeContentAttrImpact = false;
+
   // Set a new load ID. This will cause events which were enqueued
   // with a different load ID to silently be cancelled.
   mCurrentLoadID++;
@@ -3829,6 +3832,8 @@ void HTMLMediaElement::SetMuted(bool aMuted) {
   // attribute does not unmute it.
   // https://html.spec.whatwg.org/multipage/media.html#dom-media-muted
   mMutedState = aMuted ? MutedState::True : MutedState::False;
+  // The setter has taken over; the content attribute no longer applies.
+  mMutedByRuntimeContentAttr = false;
 
   bool wasMuted = Muted();
   if (aMuted) {
@@ -5061,6 +5066,21 @@ void HTMLMediaElement::DispatchBlockEventForVideoControl() {
 #endif
 }
 
+void HTMLMediaElement::MaybeRecordRuntimeMutedContentAttrImpact() {
+  if (mRecordedRuntimeContentAttrImpact || !mMutedByRuntimeContentAttr) {
+    return;
+  }
+  // Only count a playback that would be audible if not for the runtime muted
+  // content attribute: it must have audio and non-zero volume, be playing, and
+  // not already be muted for another reason.
+  if (mPaused || !HasAudio() || mVolume == 0.0 ||
+      (mMuted & ~MUTED_BY_CONTENT)) {
+    return;
+  }
+  glean::media::muted_by_content_attribute_runtime.Add(1);
+  mRecordedRuntimeContentAttrImpact = true;
+}
+
 void HTMLMediaElement::PlayInternal(bool aHandlingUserInput) {
 #if defined(MOZ_WIDGET_ANDROID)
   AUTOPLAY_LOG("Stop observing GV autoplay permission (PlayInternal starting)");
@@ -5178,6 +5198,8 @@ void HTMLMediaElement::PlayInternal(bool aHandlingUserInput) {
 
   // 9. Return promise.
   // (Done in caller.)
+
+  MaybeRecordRuntimeMutedContentAttrImpact();
 }
 
 void HTMLMediaElement::MaybeDoLoad() {
@@ -5428,6 +5450,8 @@ void HTMLMediaElement::DoneCreatingElement() {
   if (HasAttr(nsGkAtoms::muted)) {
     mMuted |= MUTED_BY_CONTENT;
     SetStates(ElementState::MUTED, Muted());
+    // The attribute is present at creation, so it is not a runtime addition.
+    mMutedByRuntimeContentAttr = false;
   }
 }
 
@@ -5490,10 +5514,14 @@ void HTMLMediaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       // fallback that determines whether the element is muted. Changing the
       // content attribute is not a volumechange trigger; only the muted and
       // volume IDL setters fire that event.
-      if (StaticPrefs::dom_media_muted_state_enabled() &&
-          mMutedState == MutedState::Default) {
-        SetMutedInternal(aValue ? (mMuted | MUTED_BY_CONTENT)
-                                : (mMuted & ~MUTED_BY_CONTENT));
+      if (mMutedState == MutedState::Default) {
+        // Track whether the muted content attribute added at runtime is what
+        // would mute this element; its impact is recorded at playback.
+        mMutedByRuntimeContentAttr = !!aValue;
+        if (StaticPrefs::dom_media_muted_state_enabled()) {
+          SetMutedInternal(aValue ? (mMuted | MUTED_BY_CONTENT)
+                                  : (mMuted & ~MUTED_BY_CONTENT));
+        }
       }
     }
   }
@@ -6934,6 +6962,8 @@ void HTMLMediaElement::RunAutoplay() {
   QueueEvent(u"playing"_ns);
 
   MaybeMarkSHEntryAsUserInteracted();
+
+  MaybeRecordRuntimeMutedContentAttrImpact();
 }
 
 bool HTMLMediaElement::IsActuallyInvisible() const {

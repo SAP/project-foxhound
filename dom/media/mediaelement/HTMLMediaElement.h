@@ -1318,6 +1318,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    */
   void SetVolumeInternal();
 
+  // Record the glean probe once per resource when a playback that would
+  // otherwise be audible is muted only by the muted content attribute added at
+  // runtime.
+  void MaybeRecordRuntimeMutedContentAttrImpact();
+
   /**
    * Suspend or resume element playback and resource download.  When we suspend
    * playback, event delivery would also be suspended (and events queued) until
@@ -1616,6 +1621,13 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted-state
   enum class MutedState : uint8_t { Default, True, False };
   MutedState mMutedState = MutedState::Default;
+
+  // Whether the muted content attribute added at runtime (while the muted state
+  // is "default") is what would mute this element, and whether the resulting
+  // impact has already been recorded for the current resource. Used only for
+  // the glean probe.
+  bool mMutedByRuntimeContentAttr = false;
+  bool mRecordedRuntimeContentAttrImpact = false;
 
   UniquePtr<const MetadataTags> mTags;
 
