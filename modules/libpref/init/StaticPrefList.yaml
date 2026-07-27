@@ -3839,6 +3839,13 @@
   value: true
   mirror: always
 
+# Whether the muted content attribute acts as a live fallback for the muted
+# state. Gated to Nightly while other engines have not shipped this behavior.
+- name: dom.media.muted-state.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 # Media element pseudo-classes
 - name: dom.media.pseudo-classes.enabled
   type: RelaxedAtomicBool

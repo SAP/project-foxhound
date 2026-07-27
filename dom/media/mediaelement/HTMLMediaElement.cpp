@@ -64,6 +64,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/AudioTrack.h"
@@ -5489,7 +5490,8 @@ void HTMLMediaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       // fallback that determines whether the element is muted. Changing the
       // content attribute is not a volumechange trigger; only the muted and
       // volume IDL setters fire that event.
-      if (mMutedState == MutedState::Default) {
+      if (StaticPrefs::dom_media_muted_state_enabled() &&
+          mMutedState == MutedState::Default) {
         SetMutedInternal(aValue ? (mMuted | MUTED_BY_CONTENT)
                                 : (mMuted & ~MUTED_BY_CONTENT));
       }
