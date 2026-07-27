@@ -639,8 +639,7 @@ int16_t EventStateManager::sCurrentMouseBtn = MouseButton::eNotPressed;
 EventStateManager* EventStateManager::sActiveESM = nullptr;
 EventStateManager* EventStateManager::sCursorSettingManager = nullptr;
 constinit AutoWeakFrame EventStateManager::sLastDragOverFrame{};
-LayoutDeviceIntPoint EventStateManager::sPreLockScreenPoint =
-    LayoutDeviceIntPoint(0, 0);
+LayoutDeviceIntPoint EventStateManager::sPreLockScreenPoint = kInvalidRefPoint;
 LayoutDeviceIntPoint EventStateManager::sLastRefPoint = kInvalidRefPoint;
 LayoutDeviceIntPoint EventStateManager::sLastRefPointOfRawUpdate =
     kInvalidRefPoint;
@@ -5977,6 +5976,7 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
   if (PointerLockManager::IsLocked()) {
     MOZ_ASSERT(aWidget, "Locking pointer requires a widget");
     MOZ_ASSERT(aPresContext, "Locking pointer requires a presContext");
+    MOZ_ASSERT(sPreLockScreenPoint == kInvalidRefPoint);
 
     // Release all pointer capture when a pointer lock is successfully applied
     // on an element.
@@ -6018,17 +6018,22 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // Reset SynthCenteringPoint to invalid so that next time we start
     // locking pointer, it has its initial value.
     sSynthCenteringPoint = kInvalidRefPoint;
+
+    LayoutDeviceIntPoint preLockScreenPoint = sPreLockScreenPoint;
+    sPreLockScreenPoint = kInvalidRefPoint;
+
     if (aWidget) {
+      MOZ_ASSERT(preLockScreenPoint != kInvalidRefPoint);
       // Unlocking, so return pointer to the original position by firing a
       // synthetic mouse event. We first reset sLastRefPoint and
       // sLastRefPointOfRawUpdate to its pre-pointerlock position, so that the
       // synthetic mouse event reports no movement.
       sLastRefPoint = sLastRefPointOfRawUpdate =
-          sPreLockScreenPoint - aWidget->WidgetToScreenOffset();
+          preLockScreenPoint - aWidget->WidgetToScreenOffset();
       // XXX Cannot we do synthesize the native mousemove in the parent process
       //     with calling `UnlockNativePointer` above?  Then, we could make this
       //     API work only in the automation mode.
-      aWidget->SynthesizeNativeMouseMove(sPreLockScreenPoint, nullptr);
+      aWidget->SynthesizeNativeMouseMove(preLockScreenPoint, nullptr);
     }
 
     // Unsuppress DnD
